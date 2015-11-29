@@ -33,7 +33,6 @@ THE SOFTWARE.
 
 /*TODO:
 - Umbau auf binary transmission with minimal packet_size
-- Serial Prints raus (dann sollte es schon viel schneller gehen)
 */
 
 #include <ESP8266WiFi.h>
@@ -67,6 +66,8 @@ MPU6050 accelgyro;
 
 int16_t ax, ay, az;
 int16_t gx, gy, gz;
+uint8_t mpuid;
+int16_t temperature;
 
 
 
@@ -82,8 +83,13 @@ int16_t gx, gy, gz;
 //#define OUTPUT_BINARY_ACCELGYRO
 
 
-#define LED_PIN 13
+#define LED_PIN 1
 bool blinkState = false;
+
+void toggle_LED(){
+    blinkState = !blinkState;
+    digitalWrite(LED_PIN, blinkState);
+}
 
 void setup() {
     WiFi.begin(ssid,password);
@@ -91,18 +97,9 @@ void setup() {
     // join I2C bus (I2Cdev library doesn't do this automatically)
     Wire.begin(4,5);
 
-    // initialize serial communication
-    // (38400 chosen because it works as well at 8MHz as it does at 16MHz, but
-    // it's really up to you depending on your project)
-    Serial.begin(9600);
-
-    // initialize device
-    Serial.println("Initializing I2C devices...");
     accelgyro.initialize();
-
-    // verify connection
-    Serial.println("Testing device connections...");
-    Serial.println(accelgyro.testConnection() ? "MPU6050 connection successful" : "MPU6050 connection failed");
+    //mpuid = accelgyro.getDeviceID();
+    accelgyro.setTempSensorEnabled(1);
 
     // use the code below to change accel/gyro offset values
     /*
@@ -132,13 +129,16 @@ void setup() {
     
     while (WiFi.status() != WL_CONNECTED) {
     delay(500);
-    Serial.print(".");
+    toggle_LED();
   }
+  digitalWrite(LED_PIN, 1);
   
 }
 
 
 void loop() {
+    //temperature = accelgyro.getTemperature();
+
     // read raw accel/gyro measurements from device
     accelgyro.getMotion6(&ax, &ay, &az, &gx, &gy, &gz);
 
@@ -165,8 +165,5 @@ void loop() {
     udp.write(packetBuffer,PACKET_LEN);
     udp.endPacket();
     
-
-    // blink LED to indicate activity
-    blinkState = !blinkState;
-    digitalWrite(LED_PIN, blinkState);
+    //toggle_LED();
 }
