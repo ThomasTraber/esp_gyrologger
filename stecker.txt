@@ -1,0 +1,7 @@
+= Zahnseidenschachtel =
+1   GND
+2   VCC
+3   TXD
+4   RXD 
+5   GPIO0 
+6   CH_PD

@@ -35,18 +35,34 @@ THE SOFTWARE.
 - Umbau auf binary transmission with minimal packet_size
 */
 
+#define AP
+#define DELAY 100   //ms
+
 #include <ESP8266WiFi.h>
 #include <WiFiUdp.h>
+#include <ESP8266WebServer.h>
 
+
+
+#ifdef AP
+const char *Host="192.168.4.255";
+const char *apssid = "VMACCEL";
+const char *appwd = "velomobil";
+#else
+//const char *Host="192.168.178.23";
+const char *Host="192.168.178.255";
+//const char *Host="255.255.255.255";   // does not work
 const char *ssid = "FRITZ!Box 7312";
 const char *password = "38018563552051264893";
+#endif
 
 unsigned int Port = 4742;      // local port to listen for UDP packets
 WiFiUDP udp;
+ESP8266WebServer server ( 80 );
 
-#define PACKET_LEN 64
-char packetBuffer[PACKET_LEN];
 
+#define PACKET_LEN  9*2
+int16_t packetBuffer[9];
 
 // I2Cdev and MPU6050 must be installed as libraries, or else the .cpp/.h files
 // for both classes must be in the include path of your project
@@ -68,19 +84,11 @@ int16_t ax, ay, az;
 int16_t gx, gy, gz;
 uint8_t mpuid;
 int16_t temperature;
+uint16_t packet_count=0;
+uint8_t delay_val=DELAY;
+String rxmsg;
 
 
-
-// uncomment "OUTPUT_READABLE_ACCELGYRO" if you want to see a tab-separated
-// list of the accel X/Y/Z and then gyro X/Y/Z values in decimal. Easy to read,
-// not so easy to parse, and slow(er) over UART.
-#define OUTPUT_READABLE_ACCELGYRO
-
-// uncomment "OUTPUT_BINARY_ACCELGYRO" to send all 6 axes of data as 16-bit
-// binary, one right after the other. This is very fast (as fast as possible
-// without compression or data loss), and easy to parse, but impossible to read
-// for a human.
-//#define OUTPUT_BINARY_ACCELGYRO
 
 
 #define LED_PIN 1
@@ -92,14 +100,21 @@ void toggle_LED(){
 }
 
 void setup() {
+    #ifdef AP
+    WiFi.softAP(apssid,appwd);
+    #else
     WiFi.begin(ssid,password);
+    #endif
     
     // join I2C bus (I2Cdev library doesn't do this automatically)
-    Wire.begin(4,5);
+    //Wire.begin(4,5);
+    Wire.begin(12,13);
 
     accelgyro.initialize();
+    accelgyro.setFullScaleGyroRange(MPU6050_GYRO_FS_2000);
+    accelgyro.setFullScaleAccelRange(MPU6050_ACCEL_FS_8);
     //mpuid = accelgyro.getDeviceID();
-    accelgyro.setTempSensorEnabled(1);
+    //accelgyro.setTempSensorEnabled(0);
 
     // use the code below to change accel/gyro offset values
     /*
@@ -130,9 +145,9 @@ void setup() {
     while (WiFi.status() != WL_CONNECTED) {
     delay(500);
     toggle_LED();
-  }
-  digitalWrite(LED_PIN, 1);
-  
+    }
+    digitalWrite(LED_PIN, true);
+    udp.begin(Port);
 }
 
 
@@ -146,24 +161,33 @@ void loop() {
     //accelgyro.getAcceleration(&ax, &ay, &az);
     //accelgyro.getRotation(&gx, &gy, &gz);
 
-    #ifdef OUTPUT_READABLE_ACCELGYRO
-        // display tab-separated accel/gyro x/y/z values
-        memset(packetBuffer,0,PACKET_LEN);
-        snprintf(packetBuffer,PACKET_LEN,"%d\t%d\t%d\t%d\t%d\t%d\t%d\n",
-        millis(),ax,ay,az,gx,gy,gz);
-    #endif
+    packetBuffer[0] = millis();
+    packetBuffer[2] = packet_count;
+    packetBuffer[3] = ax;
+    packetBuffer[4] = ay;
+    packetBuffer[5] = az;
+    packetBuffer[6] = gx;
+    packetBuffer[7] = gy;
+    packetBuffer[8] = gz;
 
-    #ifdef OUTPUT_BINARY_ACCELGYRO
-        Serial.write((uint8_t)(ax >> 8)); Serial.write((uint8_t)(ax & 0xFF));
-        Serial.write((uint8_t)(ay >> 8)); Serial.write((uint8_t)(ay & 0xFF));
-        Serial.write((uint8_t)(az >> 8)); Serial.write((uint8_t)(az & 0xFF));
-        Serial.write((uint8_t)(gx >> 8)); Serial.write((uint8_t)(gx & 0xFF));
-        Serial.write((uint8_t)(gy >> 8)); Serial.write((uint8_t)(gy & 0xFF));
-        Serial.write((uint8_t)(gz >> 8)); Serial.write((uint8_t)(gz & 0xFF));
-    #endif
-    udp.beginPacket("192.168.178.23",Port);
-    udp.write(packetBuffer,PACKET_LEN);
+    udp.beginPacket(Host,Port);
+    udp.write((char *)&packetBuffer,PACKET_LEN);
     udp.endPacket();
-    
-    //toggle_LED();
+    packet_count++;
+
+    int rx = udp.parsePacket();
+    if (rx>5){
+        udp.read((char *) &packetBuffer,PACKET_LEN);
+        rxmsg = String((char *) &packetBuffer);
+        if (rxmsg.startsWith("delay")){
+            delay_val = String(rxmsg.substring(5,9)).toInt();
+            }
+        if (rxmsg.startsWith("led"))
+            digitalWrite(LED_PIN, rxmsg.substring(4,5)=="1");
+        if (rxmsg.startsWith("t"))
+            toggle_LED();
+        
+    }
+    delay(delay_val);
 }
+
