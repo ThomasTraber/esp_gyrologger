@@ -35,7 +35,7 @@ THE SOFTWARE.
 - Umbau auf binary transmission with minimal packet_size
 */
 
-#define AP
+#define ACCESS_POINT
 #define DELAY 100   //ms
 
 #include <ESP8266WiFi.h>
@@ -44,7 +44,7 @@ THE SOFTWARE.
 
 
 
-#ifdef AP
+#ifdef ACCESS_POINT 
 const char *Host="192.168.4.255";
 const char *apssid = "VMACCEL";
 const char *appwd = "velomobil";
@@ -100,7 +100,7 @@ void toggle_LED(){
 }
 
 void setup() {
-    #ifdef AP
+    #ifdef ACCESS_POINT
     WiFi.softAP(apssid,appwd);
     #else
     WiFi.begin(ssid,password);
