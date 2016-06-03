@@ -35,13 +35,15 @@ THE SOFTWARE.
 - Umbau auf binary transmission with minimal packet_size
 */
 
-#define ACCESS_POINT
-#define DELAY 100   //ms
+//#define ACCESS_POINT
+#define DELAY 0   //ms
+#define RAMLOGSIZE 4
 
 #include <ESP8266WiFi.h>
-#include <WiFiUdp.h>
 #include <ESP8266WebServer.h>
-
+#include <FS.h>
+#include "/home/tt/sketchbook/system.inc"
+#include "/home/tt/sketchbook/web.inc"
 
 
 #ifdef ACCESS_POINT 
@@ -49,20 +51,24 @@ const char *Host="192.168.4.255";
 const char *apssid = "VMACCEL";
 const char *appwd = "velomobil";
 #else
-//const char *Host="192.168.178.23";
-const char *Host="192.168.178.255";
-//const char *Host="255.255.255.255";   // does not work
-const char *ssid = "FRITZ!Box 7312";
-const char *password = "38018563552051264893";
+#include "/home/tt/sketchbook/secrets.inc"
 #endif
 
-unsigned int Port = 4742;      // local port to listen for UDP packets
-WiFiUDP udp;
 ESP8266WebServer server ( 80 );
+File fsUploadFile;
 
+unsigned short dptr;
+unsigned short dbegin=0;
+unsigned short dend=0;
+int temps[RAMLOGSIZE];
 
-#define PACKET_LEN  9*2
-int16_t packetBuffer[9];
+struct dat{
+    unsigned long time;
+    int16_t gx;
+    int16_t gy;
+    int16_t gz;
+} data[1000];
+
 
 // I2Cdev and MPU6050 must be installed as libraries, or else the .cpp/.h files
 // for both classes must be in the include path of your project
@@ -80,31 +86,99 @@ int16_t packetBuffer[9];
 MPU6050 accelgyro;
 //MPU6050 accelgyro(0x69); // <-- use for AD0 high
 
-int16_t ax, ay, az;
 int16_t gx, gy, gz;
-uint8_t mpuid;
-int16_t temperature;
-uint16_t packet_count=0;
 uint8_t delay_val=DELAY;
-String rxmsg;
 
-
-
-
-#define LED_PIN 1
+const int led=13;
 bool blinkState = false;
 
 void toggle_LED(){
     blinkState = !blinkState;
-    digitalWrite(LED_PIN, blinkState);
+    digitalWrite(led, blinkState);
+}
+
+void handleRoot(){
+    char msg[200];
+    snprintf(msg,200,"MPUID:\t%d\n",
+        accelgyro.getDeviceID());
+    server.send(200,"text/plain", msg);
+}
+
+void handleFileUpload(){
+  HTTPUpload& upload = server.upload();
+  if(upload.status == UPLOAD_FILE_START){
+    String filename = upload.filename;
+    if(!filename.startsWith("/")) filename = "/"+filename;
+    fsUploadFile = SPIFFS.open(filename, "w");
+    filename = String();
+  } else if(upload.status == UPLOAD_FILE_WRITE){
+    if(fsUploadFile)
+      fsUploadFile.write(upload.buf, upload.currentSize);
+  } else if(upload.status == UPLOAD_FILE_END){
+    if(fsUploadFile)
+      fsUploadFile.close();
+  }
+}
+
+void handleNotFound() {
+    String path = server.uri();
+    if(path.endsWith("/")) path += "index.htm";
+    String contentType = getContentType(path);
+    if (SPIFFS.exists(path)){
+        File file = SPIFFS.open(path, "r");
+        server.streamFile(file,contentType);
+        file.close();
+    }else{ 
+        digitalWrite ( led, 1 );
+        String message = "File Not Found\n\n";
+        message += "URI: ";
+        message += server.uri();
+        message += "\nMethod: ";
+        message += ( server.method() == HTTP_GET ) ? "GET" : "POST";
+        message += "\nArguments: ";
+        message += server.args();
+        message += "\n";
+
+        for ( uint8_t i = 0; i < server.args(); i++ ) {
+            message += " " + server.argName ( i ) + ": " + server.arg ( i ) + "\n";
+        }
+
+        server.send ( 404, "text/plain", message );
+    }
+	digitalWrite ( led, 0 );
+}
+
+void mpuinfo(){
+    char msg[200];
+    snprintf(msg,200,"MPUID:\t%d\nFIFOEnabled:\t%d\n",
+        accelgyro.getDeviceID(),accelgyro.getFIFOEnabled());
+    server.send(200,"text/plain", msg);
+}
+
+void newlog(){
+    // backup old logfile
+    if (SPIFFS.exists("/data.txt")){
+        Serial.println("data.txt exists");
+        for (unsigned i=0;i<9999;i++){
+            String backupname=String("/data")+String(i)+".txt";
+            if (!SPIFFS.exists(backupname)){
+                Serial.println("Renaming data.txt to "+backupname);
+                SPIFFS.rename("/data.txt",backupname);
+                break;
+            }
+        }
+    }
 }
 
 void setup() {
+    Serial.begin(115200);
+    SPIFFS.begin();
     #ifdef ACCESS_POINT
     WiFi.softAP(apssid,appwd);
     #else
     WiFi.begin(ssid,password);
     #endif
+    newlog();
     
     // join I2C bus (I2Cdev library doesn't do this automatically)
     //Wire.begin(4,5);
@@ -113,8 +187,7 @@ void setup() {
     accelgyro.initialize();
     accelgyro.setFullScaleGyroRange(MPU6050_GYRO_FS_2000);
     accelgyro.setFullScaleAccelRange(MPU6050_ACCEL_FS_8);
-    //mpuid = accelgyro.getDeviceID();
-    //accelgyro.setTempSensorEnabled(0);
+    accelgyro.setTempSensorEnabled(0);
 
     // use the code below to change accel/gyro offset values
     /*
@@ -139,55 +212,58 @@ void setup() {
     Serial.print("\n");
     */
 
+    server.begin();
+	server.on ( "/", handleRoot );
+    server.on("/mpuinfo",mpuinfo);
+    server.on("/sys",system_html);
+    server.on("/upload",HTTP_POST,[](){ server.send(200,"text/plain","");},handleFileUpload);
+	server.onNotFound ( handleNotFound );
+
+
     // configure Arduino LED for
-    pinMode(LED_PIN, OUTPUT);
+    pinMode(led, OUTPUT);
     
     while (WiFi.status() != WL_CONNECTED) {
     delay(500);
     toggle_LED();
     }
-    digitalWrite(LED_PIN, true);
-    udp.begin(Port);
+    digitalWrite(led, true);
 }
 
 
 void loop() {
-    //temperature = accelgyro.getTemperature();
+	ESP.wdtDisable();
+	server.handleClient();
 
     // read raw accel/gyro measurements from device
-    accelgyro.getMotion6(&ax, &ay, &az, &gx, &gy, &gz);
-
-    // these methods (and a few others) are also available
+    //accelgyro.getMotion6(&ax, &ay, &az, &gx, &gy, &gz);
     //accelgyro.getAcceleration(&ax, &ay, &az);
-    //accelgyro.getRotation(&gx, &gy, &gz);
+    accelgyro.getRotation(&gx, &gy, &gz);
 
-    packetBuffer[0] = millis();
-    packetBuffer[2] = packet_count;
-    packetBuffer[3] = ax;
-    packetBuffer[4] = ay;
-    packetBuffer[5] = az;
-    packetBuffer[6] = gx;
-    packetBuffer[7] = gy;
-    packetBuffer[8] = gz;
+    data[dptr].time = millis();
+    data[dptr].gx = gx;
+    data[dptr].gy = gy;
+    data[dptr].gz = gz;
 
-    udp.beginPacket(Host,Port);
-    udp.write((char *)&packetBuffer,PACKET_LEN);
-    udp.endPacket();
-    packet_count++;
-
-    int rx = udp.parsePacket();
-    if (rx>5){
-        udp.read((char *) &packetBuffer,PACKET_LEN);
-        rxmsg = String((char *) &packetBuffer);
-        if (rxmsg.startsWith("delay")){
-            delay_val = String(rxmsg.substring(5,9)).toInt();
-            }
-        if (rxmsg.startsWith("led"))
-            digitalWrite(LED_PIN, rxmsg.substring(4,5)=="1");
-        if (rxmsg.startsWith("t"))
-            toggle_LED();
-        
+    if (dbegin!=0){
+        dbegin++;
+        if (dbegin>=RAMLOGSIZE)
+        {
+            dbegin = 0;
+        }
     }
+    if (dend>=RAMLOGSIZE){
+        //RAM filled
+        File f=SPIFFS.open("/data.txt","a");
+        for (int i=0;i<RAMLOGSIZE;i++)
+            f.println(String(temps[i]));
+        f.close();
+        dend = 0;
+        dbegin= 1;
+    } 
+
+   // hier muss die Auswertung rein. Pendelstartdetection, Pendelfrequenz und Anzahl Pendelschwingungen (via Gyrovorzeichenwechsel)
+
     delay(delay_val);
 }
 
