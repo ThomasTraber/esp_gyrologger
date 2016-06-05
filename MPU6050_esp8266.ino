@@ -32,7 +32,10 @@ THE SOFTWARE.
 */
 
 /*TODO:
-- Umbau auf binary transmission with minimal packet_size
+- OTA einbauen
+- Sys updaten (VCC, ESP.getFreeSketchSpace();
+- Network Configuration via Webinterface
+- Progmem warning bearbeiten
 */
 
 //#define ACCESS_POINT
@@ -41,10 +44,13 @@ THE SOFTWARE.
 
 #include <ESP8266WiFi.h>
 #include <ESP8266WebServer.h>
+#include <ESP8266mDNS.h>
+#include <ESP8266HTTPUpdateServer.h>
 #include <FS.h>
 #include "/home/tt/sketchbook/system.inc"
 #include "/home/tt/sketchbook/web.inc"
 
+const char* myhostname = "gyro";
 
 #ifdef ACCESS_POINT 
 const char *Host="192.168.4.255";
@@ -55,6 +61,7 @@ const char *appwd = "velomobil";
 #endif
 
 ESP8266WebServer server ( 80 );
+ESP8266HTTPUpdateServer httpUpdater;
 File fsUploadFile;
 
 unsigned short dptr;
@@ -212,6 +219,15 @@ void setup() {
     Serial.print("\n");
     */
 
+    pinMode(led, OUTPUT);
+    while (WiFi.status() != WL_CONNECTED) {
+    delay(500);
+    toggle_LED();
+    }
+    digitalWrite(led, true);
+
+    MDNS.begin(myhostname);
+    httpUpdater.setup(&server);
     server.begin();
 	server.on ( "/", handleRoot );
     server.on("/mpuinfo",mpuinfo);
@@ -219,15 +235,7 @@ void setup() {
     server.on("/upload",HTTP_POST,[](){ server.send(200,"text/plain","");},handleFileUpload);
 	server.onNotFound ( handleNotFound );
 
-
-    // configure Arduino LED for
-    pinMode(led, OUTPUT);
-    
-    while (WiFi.status() != WL_CONNECTED) {
-    delay(500);
-    toggle_LED();
-    }
-    digitalWrite(led, true);
+    MDNS.addService("http","tcp",80);
 }
 
 
