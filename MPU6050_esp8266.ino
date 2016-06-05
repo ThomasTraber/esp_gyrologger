@@ -32,15 +32,18 @@ THE SOFTWARE.
 */
 
 /*TODO:
-- OTA einbauen
-- Sys updaten (VCC, ESP.getFreeSketchSpace();
+- Sys updaten (VCC);
+- File deleter (free file space checken (limit?) und ev. älteste Files löschen)
+- MPU data display
+- MPU Configurator
 - Network Configuration via Webinterface
 - Progmem warning bearbeiten
 */
 
 //#define ACCESS_POINT
-#define DELAY 0   //ms
-#define RAMLOGSIZE 4
+#define DELAY 1   //ms
+#define RAMLOGSIZE 1024
+#define I2CBUS 4,5       //this is nodemcu port 1,2 see: https://github.com/nodemcu/nodemcu-devkit-v1.0#pin-map
 
 #include <ESP8266WiFi.h>
 #include <ESP8266WebServer.h>
@@ -64,17 +67,15 @@ ESP8266WebServer server ( 80 );
 ESP8266HTTPUpdateServer httpUpdater;
 File fsUploadFile;
 
-unsigned short dptr;
+unsigned short dptr=0;
 unsigned short dbegin=0;
-unsigned short dend=0;
-int temps[RAMLOGSIZE];
 
 struct dat{
     unsigned long time;
     int16_t gx;
     int16_t gy;
     int16_t gz;
-} data[1000];
+} data[RAMLOGSIZE];
 
 
 // I2Cdev and MPU6050 must be installed as libraries, or else the .cpp/.h files
@@ -95,6 +96,8 @@ MPU6050 accelgyro;
 
 int16_t gx, gy, gz;
 uint8_t delay_val=DELAY;
+
+File f;
 
 const int led=13;
 bool blinkState = false;
@@ -162,6 +165,12 @@ void mpuinfo(){
     server.send(200,"text/plain", msg);
 }
 
+void mputemp(){
+    String msg = String(accelgyro.getTemperature());
+    server.send(200,"text/plain",msg);
+}
+    
+
 void newlog(){
     // backup old logfile
     if (SPIFFS.exists("/data.txt")){
@@ -189,7 +198,7 @@ void setup() {
     
     // join I2C bus (I2Cdev library doesn't do this automatically)
     //Wire.begin(4,5);
-    Wire.begin(12,13);
+    Wire.begin(I2CBUS);
 
     accelgyro.initialize();
     accelgyro.setFullScaleGyroRange(MPU6050_GYRO_FS_2000);
@@ -231,11 +240,31 @@ void setup() {
     server.begin();
 	server.on ( "/", handleRoot );
     server.on("/mpuinfo",mpuinfo);
+    server.on("/temp",mputemp);
+    server.on("/temperature",mputemp);
     server.on("/sys",system_html);
+    server.on("/system",system_html);
     server.on("/upload",HTTP_POST,[](){ server.send(200,"text/plain","");},handleFileUpload);
 	server.onNotFound ( handleNotFound );
 
     MDNS.addService("http","tcp",80);
+
+    if (SPIFFS.exists("/data.txt")){
+        Serial.println("data.txt exists");
+        for (unsigned i=0;i<9999;i++){
+            String backupname=String("/data")+String(i)+".txt";
+            if (!SPIFFS.exists(backupname)){
+                Serial.println("Renaming data.txt to "+backupname);
+                SPIFFS.rename("/data.txt",backupname);
+                break;
+            }
+        }
+    }
+
+    f=SPIFFS.open("/data.txt","a");
+    f.println(String(accelgyro.getTemperature()));
+    f.close();
+
 }
 
 
@@ -252,6 +281,7 @@ void loop() {
     data[dptr].gx = gx;
     data[dptr].gy = gy;
     data[dptr].gz = gz;
+    dptr++;
 
     if (dbegin!=0){
         dbegin++;
@@ -260,13 +290,13 @@ void loop() {
             dbegin = 0;
         }
     }
-    if (dend>=RAMLOGSIZE){
+    if (dptr>=RAMLOGSIZE){
         //RAM filled
-        File f=SPIFFS.open("/data.txt","a");
+        f=SPIFFS.open("/data.txt","a");
         for (int i=0;i<RAMLOGSIZE;i++)
-            f.println(String(temps[i]));
+            f.printf("%u\t%i\t%i\t%i\n",data[i].time,data[i].gx,data[i].gy,data[i].gz);
         f.close();
-        dend = 0;
+        dptr = 0;
         dbegin= 1;
     } 
 
