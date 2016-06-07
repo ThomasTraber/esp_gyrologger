@@ -41,7 +41,8 @@ THE SOFTWARE.
 */
 
 //#define ACCESS_POINT
-#define DELAY 1   //ms
+#define LOGDELAY 1   //ms
+#define LOOPDELAY 1000 //ms
 #define RAMLOGSIZE 1024
 #define I2CBUS 4,5       //this is nodemcu port 1,2 see: https://github.com/nodemcu/nodemcu-devkit-v1.0#pin-map
 
@@ -70,11 +71,16 @@ File fsUploadFile;
 unsigned short dptr=0;
 unsigned short dbegin=0;
 
+unsigned long lasttime=0;
+
 struct dat{
     unsigned long time;
     int16_t gx;
     int16_t gy;
     int16_t gz;
+    int16_t ax;
+    int16_t ay;
+    int16_t az;
 } data[RAMLOGSIZE];
 
 
@@ -91,11 +97,13 @@ struct dat{
 // specific I2C addresses may be passed as a parameter here
 // AD0 low = 0x68 (default for InvenSense evaluation board)
 // AD0 high = 0x69
-MPU6050 accelgyro;
-//MPU6050 accelgyro(0x69); // <-- use for AD0 high
+MPU6050 mpu;
+//MPU6050 mpu(0x69); // <-- use for AD0 high
 
 int16_t gx, gy, gz;
-uint8_t delay_val=DELAY;
+int16_t ax, ay, az;
+uint8_t delay_val=LOGDELAY;
+uint16_t loopdelay=LOOPDELAY;
 
 File f;
 
@@ -110,7 +118,7 @@ void toggle_LED(){
 void handleRoot(){
     char msg[200];
     snprintf(msg,200,"MPUID:\t%d\n",
-        accelgyro.getDeviceID());
+        mpu.getDeviceID());
     server.send(200,"text/plain", msg);
 }
 
@@ -159,19 +167,96 @@ void handleNotFound() {
 }
 
 void mpuinfo(){
-    char msg[200];
-    snprintf(msg,200,"MPUID:\t%d\nFIFOEnabled:\t%d\n",
-        accelgyro.getDeviceID(),accelgyro.getFIFOEnabled());
-    server.send(200,"text/plain", msg);
+    String msg="<html><head><title>MPU Info</title><style>body{background-color: #AAAAAA; font-family: Arial, Helvetica, Sans-Serif; Color: #000000; }</style></head><body>";
+    msg +="<td> MPUID: "+String(mpu.getDeviceID());
+    msg +="</td><td> Temperature Sensor </td><td>" + mpu.getTempSensorEnabled()?"enabled":"disabled";
+    msg +="</td><td> FIFOEnabled:"+String(mpu.getFIFOEnabled());
+    msg +="</body></html>";
+    server.send(200,"text/html", msg);
 }
 
-void mputemp(){
-    String msg = String(accelgyro.getTemperature());
-    server.send(200,"text/plain",msg);
+void mpuconfig(){
+        String msg;
+        String argname, argval;
+        int argint;
+
+        for ( uint8_t i = 0; i < server.args(); i++ ) {
+            argname = server.argName(i);
+            argval = server.arg(i);
+            argint = argval.toInt();
+            Serial.println(server.uri());
+            Serial.print(argname+" = "+argval +" "+argint);
+
+            if((argname=="temp") or (argname == "temperature"))
+                msg = String(mpu.getTemperature());
+            else if(argname=="id")
+                msg = String(mpu.getDeviceID());
+            else if(argname=="fifo"){
+                if (argval!="")
+                    mpu.setFIFOEnabled(argint);
+                msg = String(mpu.getFIFOEnabled());
+                }
+            else if(argname=="ax")
+                msg = String(ax);
+            else if(argname=="ay")
+                msg = String(ay);
+            else if(argname=="az")
+                msg = String(az);
+            else if(argname=="gx")
+                msg = String(gx);
+            else if(argname=="gy")
+                msg = String(gy);
+            else if(argname=="gz")
+                msg = String(gz);
+            else if(argname=="rate"){
+                if (argval!="")
+                    mpu.setRate(argint);
+                msg = String(mpu.getRate());
+                }
+            
+        server.send(200,"text/plain",msg);
+    }
 }
-    
+
+unsigned int txkey;
+
+void filedelete(){
+        String filename="nothing";
+        String argname;
+        String argval;
+        unsigned int rxkey=0;
+        String msg="<html><head><title>File Delete</title><style>body{background-color: #FF8888; font-family: Arial, Helvetica, Sans-Serif; Color: #000088; }</style></head><body>";
+
+        for ( uint8_t i = 0; i < server.args(); i++ ) {
+            argname = server.argName(i);
+            argval = server.arg(i);
+            if (argname=="filename")
+                filename = argval;
+            if (argval=="key")
+                rxkey = argval.toInt();
+        }
+        switch(rxkey){
+            case 0:
+                txkey=random(1,100000);
+                msg+="Delete "+filename+"?"+"</br><a href=\""+server.uri()+"?filename="+filename+"&key="+String(txkey)+"\">YES</a>---<a href=\"/\">NO</a>";
+                break;
+            default:
+                msg+="filename";
+                if (rxkey==txkey){
+                    SPIFFS.remove(filename);
+                    msg+=filename+" deleted";
+                }else
+                    msg+=filename+" not deleted";
+                break;
+    }
+                msg+="</body></html>";
+                server.send(200,"text/html",msg);
+}
+            
+             
 
 void newlog(){
+    Serial.println("Creating new logfile");
     // backup old logfile
     if (SPIFFS.exists("/data.txt")){
         Serial.println("data.txt exists");
@@ -187,6 +272,7 @@ void newlog(){
 }
 
 void setup() {
+	ESP.wdtDisable();
     Serial.begin(115200);
     SPIFFS.begin();
     #ifdef ACCESS_POINT
@@ -200,31 +286,31 @@ void setup() {
     //Wire.begin(4,5);
     Wire.begin(I2CBUS);
 
-    accelgyro.initialize();
-    accelgyro.setFullScaleGyroRange(MPU6050_GYRO_FS_2000);
-    accelgyro.setFullScaleAccelRange(MPU6050_ACCEL_FS_8);
-    accelgyro.setTempSensorEnabled(0);
+    mpu.initialize();
+    mpu.setFullScaleGyroRange(MPU6050_GYRO_FS_2000);
+    mpu.setFullScaleAccelRange(MPU6050_ACCEL_FS_8);
+    mpu.setTempSensorEnabled(1);
 
     // use the code below to change accel/gyro offset values
     /*
     Serial.println("Updating internal sensor offsets...");
     // -76	-2359	1688	0	0	0
-    Serial.print(accelgyro.getXAccelOffset()); Serial.print("\t"); // -76
-    Serial.print(accelgyro.getYAccelOffset()); Serial.print("\t"); // -2359
-    Serial.print(accelgyro.getZAccelOffset()); Serial.print("\t"); // 1688
-    Serial.print(accelgyro.getXGyroOffset()); Serial.print("\t"); // 0
-    Serial.print(accelgyro.getYGyroOffset()); Serial.print("\t"); // 0
-    Serial.print(accelgyro.getZGyroOffset()); Serial.print("\t"); // 0
+    Serial.print(mpu.getXAccelOffset()); Serial.print("\t"); // -76
+    Serial.print(mpu.getYAccelOffset()); Serial.print("\t"); // -2359
+    Serial.print(mpu.getZAccelOffset()); Serial.print("\t"); // 1688
+    Serial.print(mpu.getXGyroOffset()); Serial.print("\t"); // 0
+    Serial.print(mpu.getYGyroOffset()); Serial.print("\t"); // 0
+    Serial.print(mpu.getZGyroOffset()); Serial.print("\t"); // 0
     Serial.print("\n");
-    accelgyro.setXGyroOffset(220);
-    accelgyro.setYGyroOffset(76);
-    accelgyro.setZGyroOffset(-85);
-    Serial.print(accelgyro.getXAccelOffset()); Serial.print("\t"); // -76
-    Serial.print(accelgyro.getYAccelOffset()); Serial.print("\t"); // -2359
-    Serial.print(accelgyro.getZAccelOffset()); Serial.print("\t"); // 1688
-    Serial.print(accelgyro.getXGyroOffset()); Serial.print("\t"); // 0
-    Serial.print(accelgyro.getYGyroOffset()); Serial.print("\t"); // 0
-    Serial.print(accelgyro.getZGyroOffset()); Serial.print("\t"); // 0
+    mpu.setXGyroOffset(220);
+    mpu.setYGyroOffset(76);
+    mpu.setZGyroOffset(-85);
+    Serial.print(mpu.getXAccelOffset()); Serial.print("\t"); // -76
+    Serial.print(mpu.getYAccelOffset()); Serial.print("\t"); // -2359
+    Serial.print(mpu.getZAccelOffset()); Serial.print("\t"); // 1688
+    Serial.print(mpu.getXGyroOffset()); Serial.print("\t"); // 0
+    Serial.print(mpu.getYGyroOffset()); Serial.print("\t"); // 0
+    Serial.print(mpu.getZGyroOffset()); Serial.print("\t"); // 0
     Serial.print("\n");
     */
 
@@ -239,32 +325,21 @@ void setup() {
     httpUpdater.setup(&server);
     server.begin();
 	server.on ( "/", handleRoot );
+    server.on("/mpu",mpuconfig);
     server.on("/mpuinfo",mpuinfo);
-    server.on("/temp",mputemp);
-    server.on("/temperature",mputemp);
     server.on("/sys",system_html);
     server.on("/system",system_html);
     server.on("/upload",HTTP_POST,[](){ server.send(200,"text/plain","");},handleFileUpload);
+    server.on("/delete",filedelete);
 	server.onNotFound ( handleNotFound );
 
     MDNS.addService("http","tcp",80);
 
-    if (SPIFFS.exists("/data.txt")){
-        Serial.println("data.txt exists");
-        for (unsigned i=0;i<9999;i++){
-            String backupname=String("/data")+String(i)+".txt";
-            if (!SPIFFS.exists(backupname)){
-                Serial.println("Renaming data.txt to "+backupname);
-                SPIFFS.rename("/data.txt",backupname);
-                break;
-            }
-        }
-    }
-
     f=SPIFFS.open("/data.txt","a");
-    f.println(String(accelgyro.getTemperature()));
+    f.println(String(mpu.getTemperature()));
+    Serial.println("temp:"+String(mpu.getTemperature()));
     f.close();
-
+    Serial.println("Setup finished");
 }
 
 
@@ -273,14 +348,18 @@ void loop() {
 	server.handleClient();
 
     // read raw accel/gyro measurements from device
-    //accelgyro.getMotion6(&ax, &ay, &az, &gx, &gy, &gz);
-    //accelgyro.getAcceleration(&ax, &ay, &az);
-    accelgyro.getRotation(&gx, &gy, &gz);
+    mpu.getMotion6(&ax, &ay, &az, &gx, &gy, &gz);
+    Serial.printf("%lu,%d,%d,%d\r",micros(),ax,ay,az);
+    //mpu.getAcceleration(&ax, &ay, &az);
+    //mpu.getRotation(&gx, &gy, &gz);
 
-    data[dptr].time = millis();
+    data[dptr].time = micros();
     data[dptr].gx = gx;
     data[dptr].gy = gy;
     data[dptr].gz = gz;
+    data[dptr].ax = ax;
+    data[dptr].ay = ay;
+    data[dptr].az = az;
     dptr++;
 
     if (dbegin!=0){
@@ -293,8 +372,11 @@ void loop() {
     if (dptr>=RAMLOGSIZE){
         //RAM filled
         f=SPIFFS.open("/data.txt","a");
-        for (int i=0;i<RAMLOGSIZE;i++)
-            f.printf("%u\t%i\t%i\t%i\n",data[i].time,data[i].gx,data[i].gy,data[i].gz);
+        for (int i=0;i<RAMLOGSIZE;i++){
+            f.printf("%lu\t%i\t%i\t%i",data[i].time,data[i].gx,data[i].gy,data[i].gz);
+            f.printf("%i\t%i\t%i",data[i].ax,data[i].ay,data[i].az);
+            f.printf("\n");
+            }
         f.close();
         dptr = 0;
         dbegin= 1;
@@ -303,5 +385,11 @@ void loop() {
    // hier muss die Auswertung rein. Pendelstartdetection, Pendelfrequenz und Anzahl Pendelschwingungen (via Gyrovorzeichenwechsel)
 
     delay(delay_val);
+
+    if (millis()<lasttime+loopdelay){
+        lasttime=millis();
+	    ESP.wdtDisable();
+	    server.handleClient();
+    }
 }
 
