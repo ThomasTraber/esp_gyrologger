@@ -46,6 +46,9 @@ THE SOFTWARE.
 #define RAMLOGSIZE 1024
 #define I2CBUS 4,5       //this is nodemcu port 1,2 see: https://github.com/nodemcu/nodemcu-devkit-v1.0#pin-map
 
+#define LOG_STOP 0
+#define LOG_START 1
+
 #include <ESP8266WiFi.h>
 #include <ESP8266WebServer.h>
 #include <ESP8266mDNS.h>
@@ -68,6 +71,7 @@ ESP8266WebServer server ( 80 );
 ESP8266HTTPUpdateServer httpUpdater;
 File fsUploadFile;
 
+short logstate = LOG_STOP;
 unsigned short dptr=0;
 unsigned short dbegin=0;
 
@@ -105,7 +109,7 @@ int16_t ax, ay, az;
 uint8_t delay_val=LOGDELAY;
 uint16_t loopdelay=LOOPDELAY;
 
-File f;
+File logfile;
 
 const int led=13;
 bool blinkState = false;
@@ -142,6 +146,8 @@ void handleNotFound() {
     String path = server.uri();
     if(path.endsWith("/")) path += "index.htm";
     String contentType = getContentType(path);
+    Serial.println("not found");
+    Serial.println(path);
     if (SPIFFS.exists(path)){
         File file = SPIFFS.open(path, "r");
         server.streamFile(file,contentType);
@@ -165,6 +171,64 @@ void handleNotFound() {
     }
 	digitalWrite ( led, 0 );
 }
+
+void handleLog(){
+    String argname, argval;
+    int argint;
+    unsigned int rxkey=0;
+    static int txkey;
+    String msg="<html><head><title>Data Logging</title><style>body{background-color: #AAAAAA; font-family: Arial, Helvetica, Sans-Serif; Color: #000000; }</style></head><body>";
+    for ( uint8_t i = 0; i < server.args(); i++ ) {
+        argname = server.argName(i);
+        argval = server.arg(i);
+        argint = argval.toInt();
+        Serial.println(server.uri());
+        Serial.print(argname+" = "+argval +" "+argint);
+        if (argname=="key")
+            rxkey = argval.toInt();
+        if (argname=="start"){
+            logstate = LOG_START;
+            msg += "Data Logging started";
+            }
+        if (argname=="stop"){
+            logstate = LOG_STOP;
+            msg += "Data Logging stopped";
+        }
+    }
+    msg +="</body></html>";
+    server.send(200,"text/html",msg);
+}
+
+void handleFile(){
+    String argname, argval;
+    int argint;
+    unsigned int rxkey=0;
+    static int txkey;
+    String msg="<html><head><title>File System</title><style>body{background-color: #AAAAAA; font-family: Arial, Helvetica, Sans-Serif; Color: #000000; }</style></head><body>";
+    for ( uint8_t i = 0; i < server.args(); i++ ) {
+        argname = server.argName(i);
+        argval = server.arg(i);
+        argint = argval.toInt();
+        Serial.println(server.uri());
+        Serial.print(argname+" = "+argval +" "+argint);
+        if (argname=="key")
+            rxkey = argval.toInt();
+        if (argname=="format"){
+            if (argval!="yes") break;
+            if ((rxkey!=0) and (rxkey==txkey)){
+                SPIFFS.format();
+                msg += "formatting done";
+            }else{
+                txkey=random(1,100000);
+                msg += "Do you really want to format the onboard filesystem and loose all files? <a href=\"file?key="+String(txkey)+"&format=yes\">yes</a>...<a href=\"/\">NO</a>";
+            }
+        }
+    }
+    msg +="</body></html>";
+    server.send(200,"text/html",msg);
+
+}
+    
 
 void mpuinfo(){
     String msg="<html><head><title>MPU Info</title><style>body{background-color: #AAAAAA; font-family: Arial, Helvetica, Sans-Serif; Color: #000000; }</style></head><body>";
@@ -218,12 +282,12 @@ void mpuconfig(){
     }
 }
 
-unsigned int txkey;
 
 void filedelete(){
         String filename="nothing";
         String argname;
         String argval;
+        static unsigned int txkey;
         unsigned int rxkey=0;
         String msg="<html><head><title>File Delete</title><style>body{background-color: #FF8888; font-family: Arial, Helvetica, Sans-Serif; Color: #000088; }</style></head><body>";
 
@@ -256,8 +320,8 @@ void filedelete(){
              
 
 void newlog(){
-    Serial.println("Creating new logfile");
-    // backup old logfile
+    Serial.println("Creating new logfileile");
+    // backup old logfileile
     if (SPIFFS.exists("/data.txt")){
         Serial.println("data.txt exists");
         for (unsigned i=0;i<9999;i++){
@@ -287,6 +351,7 @@ void setup() {
     Wire.begin(I2CBUS);
 
     mpu.initialize();
+    mpu.setRate(10);
     mpu.setFullScaleGyroRange(MPU6050_GYRO_FS_2000);
     mpu.setFullScaleAccelRange(MPU6050_ACCEL_FS_8);
     mpu.setTempSensorEnabled(1);
@@ -325,20 +390,22 @@ void setup() {
     httpUpdater.setup(&server);
     server.begin();
 	server.on ( "/", handleRoot );
+    server.on("/log",handleLog);
+    server.on("/file",handleFile);
     server.on("/mpu",mpuconfig);
     server.on("/mpuinfo",mpuinfo);
     server.on("/sys",system_html);
     server.on("/system",system_html);
-    server.on("/upload",HTTP_POST,[](){ server.send(200,"text/plain","");},handleFileUpload);
+    server.on("/upload",HTTP_POST,[](){ SPIFFS.end(); server.send(200,"text/plain","");},handleFileUpload);
     server.on("/delete",filedelete);
 	server.onNotFound ( handleNotFound );
 
     MDNS.addService("http","tcp",80);
 
-    f=SPIFFS.open("/data.txt","a");
-    f.println(String(mpu.getTemperature()));
+    logfile=SPIFFS.open("/data.txt","a");
+    logfile.println(String(mpu.getTemperature()));
     Serial.println("temp:"+String(mpu.getTemperature()));
-    f.close();
+    logfile.close();
     Serial.println("Setup finished");
 }
 
@@ -349,7 +416,7 @@ void loop() {
 
     // read raw accel/gyro measurements from device
     mpu.getMotion6(&ax, &ay, &az, &gx, &gy, &gz);
-    Serial.printf("%lu,%d,%d,%d\r",micros(),ax,ay,az);
+    //Serial.printf("%lu,%d,%d,%d\r",micros(),ax,ay,az);
     //mpu.getAcceleration(&ax, &ay, &az);
     //mpu.getRotation(&gx, &gy, &gz);
 
@@ -371,13 +438,17 @@ void loop() {
     }
     if (dptr>=RAMLOGSIZE){
         //RAM filled
-        f=SPIFFS.open("/data.txt","a");
-        for (int i=0;i<RAMLOGSIZE;i++){
-            f.printf("%lu\t%i\t%i\t%i",data[i].time,data[i].gx,data[i].gy,data[i].gz);
-            f.printf("%i\t%i\t%i",data[i].ax,data[i].ay,data[i].az);
-            f.printf("\n");
-            }
-        f.close();
+        if (logstate == LOG_START){
+            Serial.println("writing ramlog");
+            logfile=SPIFFS.open("/data.txt","a");
+            Serial.print(String(logfile));
+            for (int i=0;i<RAMLOGSIZE;i++){
+                logfile.printf("%lu\t%i\t%i\t%i\t",data[i].time,data[i].gx,data[i].gy,data[i].gz);
+                logfile.printf("%i\t%i\t%i\t",data[i].ax,data[i].ay,data[i].az);
+                logfile.printf("\n");
+                }
+            logfile.close();
+        }
         dptr = 0;
         dbegin= 1;
     } 
