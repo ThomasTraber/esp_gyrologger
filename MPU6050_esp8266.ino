@@ -43,7 +43,7 @@ THE SOFTWARE.
 //#define ACCESS_POINT
 #define LOGDELAY 1   //ms
 #define LOOPDELAY 1000 //ms
-#define RAMLOGSIZE 1024
+#define RAMLOGSIZE 2048 //1024
 #define I2CBUS 4,5       //this is nodemcu port 1,2 see: https://github.com/nodemcu/nodemcu-devkit-v1.0#pin-map
 
 #define LOG_STOP 0
@@ -56,6 +56,8 @@ THE SOFTWARE.
 #include <FS.h>
 #include "/home/tt/sketchbook/system.inc"
 #include "/home/tt/sketchbook/web.inc"
+
+void newlog();
 
 const char* myhostname = "gyro";
 
@@ -120,10 +122,19 @@ void toggle_LED(){
 }
 
 void handleRoot(){
-    char msg[200];
-    snprintf(msg,200,"MPUID:\t%d\n",
-        mpu.getDeviceID());
-    server.send(200,"text/plain", msg);
+    String msg="<html><head><title>Gyrologger</title><style>body{background-color: #AAAAAA; font-family: Arial, Helvetica, Sans-Serif; Color: #000000; }</style></head><body>";
+    msg += "Logger: ";
+    switch(logstate){
+        case LOG_START:
+            msg += "running";
+            break;
+        case LOG_STOP:
+            msg += "stopped";
+            break;
+        default:
+            msg += "fault";
+    }
+    server.send(200,"text/html", msg);
 }
 
 void handleFileUpload(){
@@ -187,6 +198,11 @@ void handleLog(){
         if (argname=="key")
             rxkey = argval.toInt();
         if (argname=="start"){
+            newlog();
+            logfile=SPIFFS.open("/data.txt","a");
+            logfile.println(String(mpu.getTemperature()));
+            Serial.println("temp:"+String(mpu.getTemperature()));
+            logfile.close();
             logstate = LOG_START;
             msg += "Data Logging started";
             }
@@ -223,6 +239,19 @@ void handleFile(){
                 msg += "Do you really want to format the onboard filesystem and loose all files? <a href=\"file?key="+String(txkey)+"&format=yes\">yes</a>...<a href=\"/\">NO</a>";
             }
         }
+        if (argname=="info"){
+            if (argval==""){
+                FSInfo fsinfo;
+                SPIFFS.info(fsinfo);
+                msg += "Total Bytes: "+String(fsinfo.totalBytes)+" </br>";
+                msg += "Used Bytes: "+String(fsinfo.usedBytes)+" </br>";
+            }
+        }
+        if ((argname=="unmount") and (argval=="yes")) {
+                SPIFFS.end();
+                msg += "Filesystem unmounted";
+        }
+
     }
     msg +="</body></html>";
     server.send(200,"text/html",msg);
@@ -249,7 +278,7 @@ void mpuconfig(){
             argval = server.arg(i);
             argint = argval.toInt();
             Serial.println(server.uri());
-            Serial.print(argname+" = "+argval +" "+argint);
+            Serial.print(argname+"="+argval +" "+argint);
 
             if((argname=="temp") or (argname == "temperature"))
                 msg = String(mpu.getTemperature());
@@ -302,7 +331,7 @@ void filedelete(){
         switch(rxkey){
             case 0:
                 txkey=random(1,100000);
-                msg+="Delete "+filename+"?"+"</br><a href=\""+server.uri()+"?filename="+filename+"&key="+String(txkey)+"\">YES</a>---<a href=\"/\">NO</a>";
+                msg+="Delete "+filename+"?"+"</br><a href=\""+server.uri()+"?key="+String(txkey)+"&filename="+filename+"\">YES</a>---<a href=\"/\">NO</a>";
                 break;
             default:
                 msg+="filename";
@@ -317,8 +346,6 @@ void filedelete(){
                 server.send(200,"text/html",msg);
 }
             
-             
-
 void newlog(){
     Serial.println("Creating new logfileile");
     // backup old logfileile
@@ -346,8 +373,6 @@ void setup() {
     #endif
     newlog();
     
-    // join I2C bus (I2Cdev library doesn't do this automatically)
-    //Wire.begin(4,5);
     Wire.begin(I2CBUS);
 
     mpu.initialize();
@@ -396,16 +421,12 @@ void setup() {
     server.on("/mpuinfo",mpuinfo);
     server.on("/sys",system_html);
     server.on("/system",system_html);
-    server.on("/upload",HTTP_POST,[](){ SPIFFS.end(); server.send(200,"text/plain","");},handleFileUpload);
+    server.on("/upload",HTTP_POST,[](){ server.send(200,"text/plain","");},handleFileUpload);
     server.on("/delete",filedelete);
 	server.onNotFound ( handleNotFound );
 
     MDNS.addService("http","tcp",80);
 
-    logfile=SPIFFS.open("/data.txt","a");
-    logfile.println(String(mpu.getTemperature()));
-    Serial.println("temp:"+String(mpu.getTemperature()));
-    logfile.close();
     Serial.println("Setup finished");
 }
 
@@ -420,7 +441,7 @@ void loop() {
     //mpu.getAcceleration(&ax, &ay, &az);
     //mpu.getRotation(&gx, &gy, &gz);
 
-    data[dptr].time = micros();
+    data[dptr].time = micros()/100;
     data[dptr].gx = gx;
     data[dptr].gy = gy;
     data[dptr].gz = gz;

@@ -1,7 +1,7 @@
 {
   "builtInLibrariesFolders": "/home/tt/src/arduino-1.6.6/libraries",
   "customBuildProperties": "build.warn_data_percentage=75",
-  "fqbn": "esp8266com:esp8266:generic:UploadTool=esptool,CpuFrequency=80,FlashFreq=40,FlashMode=dio,UploadSpeed=115200,FlashSize=4M3M,ResetMethod=ck",
+  "fqbn": "esp8266com:esp8266:generic:CpuFrequency=80,FlashFreq=40,FlashMode=dio,UploadSpeed=115200,FlashSize=4M3M,ResetMethod=ck,Debug=Disabled,DebugLevel=None____",
   "hardwareFolders": "/home/tt/src/arduino-1.6.6/hardware",
   "otherLibrariesFolders": "/home/tt/Arduino/libraries",
   "runtime.ide.version": "10606",
