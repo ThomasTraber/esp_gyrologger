@@ -43,7 +43,7 @@ THE SOFTWARE.
 //#define ACCESS_POINT
 #define LOGDELAY 1   //ms
 #define LOOPDELAY 1000 //ms
-#define RAMLOGSIZE 2048 //1024
+#define RAMLOGSIZE 1024
 #define I2CBUS 4,5       //this is nodemcu port 1,2 see: https://github.com/nodemcu/nodemcu-devkit-v1.0#pin-map
 
 #define LOG_STOP 0
@@ -137,6 +137,12 @@ void handleRoot(){
     server.send(200,"text/html", msg);
 }
 
+String tempstr(){
+    int temp = mpu.getTemperature();
+    temp = (temp/34+365)/10;
+    return String(temp);
+}
+
 void handleFileUpload(){
   HTTPUpload& upload = server.upload();
   if(upload.status == UPLOAD_FILE_START){
@@ -200,8 +206,8 @@ void handleLog(){
         if (argname=="start"){
             newlog();
             logfile=SPIFFS.open("/data.txt","a");
-            logfile.println(String(mpu.getTemperature()));
-            Serial.println("temp:"+String(mpu.getTemperature()));
+            logfile.println(tempstr());
+            Serial.println("temp:"+tempstr());
             logfile.close();
             logstate = LOG_START;
             msg += "Data Logging started";
@@ -232,6 +238,7 @@ void handleFile(){
         if (argname=="format"){
             if (argval!="yes") break;
             if ((rxkey!=0) and (rxkey==txkey)){
+                logstate=LOG_STOP;
                 SPIFFS.format();
                 msg += "formatting done";
             }else{
@@ -281,7 +288,7 @@ void mpuconfig(){
             Serial.print(argname+"="+argval +" "+argint);
 
             if((argname=="temp") or (argname == "temperature"))
-                msg = String(mpu.getTemperature());
+                msg = tempstr();
             else if(argname=="id")
                 msg = String(mpu.getDeviceID());
             else if(argname=="fifo"){

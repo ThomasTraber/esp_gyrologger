@@ -1,0 +1,11 @@
+- pandoc o.ä. system für onboard html files
+- directory lister mit Klickie Options für jedes File (show, delete)
+- rtc mit ntp-call
+- acc- und gyrologgin getrennt schaltbar
+- periodendauermessung
+- harry plotter
+    - time plots
+    - sampling interval histogram
+- Kalibrator
+
+

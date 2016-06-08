@@ -1,0 +1,6 @@
+Mi 8. Jun 23:42:13 CEST 2016
+seit dem zusätzlichen Loggen der Beschleunigungssensordaten ist das Samplinginterval 2.8ms. Mit mpu?rate= kann ich das nicht ändern.
+
+Man darf den Heap nicht zu klein machen (4k), denn sonst geht das OTA nicht.
+
+
