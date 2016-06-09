@@ -108,7 +108,7 @@ MPU6050 mpu;
 
 int16_t gx, gy, gz;
 int16_t ax, ay, az;
-uint8_t delay_val=LOGDELAY;
+uint8_t logdelay=LOGDELAY;
 uint16_t loopdelay=LOOPDELAY;
 
 File logfile;
@@ -167,6 +167,7 @@ void handleNotFound() {
     Serial.println(path);
     if (SPIFFS.exists(path)){
         File file = SPIFFS.open(path, "r");
+	    ESP.wdtDisable();
         server.streamFile(file,contentType);
         file.close();
     }else{ 
@@ -216,6 +217,10 @@ void handleLog(){
             logstate = LOG_STOP;
             msg += "Data Logging stopped";
         }
+        if (argname=="delay"){
+            logdelay = argint;
+            msg += "Log delay set to "+String(argint);
+        }
     }
     msg +="</body></html>";
     server.send(200,"text/html",msg);
@@ -250,15 +255,34 @@ void handleFile(){
             if (argval==""){
                 FSInfo fsinfo;
                 SPIFFS.info(fsinfo);
-                msg += "Total Bytes: "+String(fsinfo.totalBytes)+" </br>";
-                msg += "Used Bytes: "+String(fsinfo.usedBytes)+" </br>";
+                msg += "Total kBytes: "+String(fsinfo.totalBytes/1000)+" </br>";
+                msg += "Used kBytes: "+String(fsinfo.usedBytes/1000)+" </br>";
             }
         }
         if ((argname=="unmount") and (argval=="yes")) {
                 SPIFFS.end();
                 msg += "Filesystem unmounted";
         }
-
+        if (argname=="dir"){
+            Dir dir = SPIFFS.openDir(argval);
+            String filename ;
+            while(dir.next()){
+                filename = dir.fileName();
+                Serial.print(filename);
+                msg += "<a href=\""+argval+"/"+filename+"\">"+filename+"</a>...<a href=\"file?delete="+filename+"\"&delete</a></br>";
+            }
+        }
+        if (argname=="delete"){
+            if (rxkey==0){
+                txkey=random(1,100000);
+                msg += "You really want to delete " +argval+ "?<a href=\"file?key=" +String(txkey)+ "&delete=" +argval+ "\">yes</a>...<a href=\">NO</a></br>";
+            }
+            else if (rxkey==txkey){
+                SPIFFS.remove(argval);
+                msg+=argval+" deleted";
+            }
+        }
+                 
     }
     msg +="</body></html>";
     server.send(200,"text/html",msg);
@@ -313,6 +337,26 @@ void mpuconfig(){
                     mpu.setRate(argint);
                 msg = String(mpu.getRate());
                 }
+            else if(argname=="lpf"){
+                if (argval!="")
+                    mpu.setDLPFMode(argint);
+                msg = String(mpu.getDLPFMode());
+            }
+            else if(argname=="hpf"){
+                if (argval!="")
+                    mpu.setDHPFMode(argint);
+                msg = String(mpu.getDHPFMode());
+            }
+            else if(argname=="accrange"){
+                if (argval!="")
+                    mpu.setFullScaleAccelRange(argint);
+                msg = String(mpu.getFullScaleAccelRange());
+            }
+            else if(argname=="gyrorange"){
+                if (argval!="")
+                    mpu.setFullScaleGyroRange(argint);
+                msg = String(mpu.getFullScaleGyroRange());
+            }
             
         server.send(200,"text/plain",msg);
     }
@@ -483,7 +527,7 @@ void loop() {
 
    // hier muss die Auswertung rein. Pendelstartdetection, Pendelfrequenz und Anzahl Pendelschwingungen (via Gyrovorzeichenwechsel)
 
-    delay(delay_val);
+    delay(logdelay);
 
     if (millis()<lasttime+loopdelay){
         lasttime=millis();

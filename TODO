@@ -1,5 +1,5 @@
-- pandoc o.ä. system für onboard html files
-- directory lister mit Klickie Options für jedes File (show, delete)
+- data directory einfügen und dann die Daten nur mit laufender Nummer bezeichnen
+- Reparieren: directory lister mit Klickie Options für jedes File (show, delete) 
 - rtc mit ntp-call
 - acc- und gyrologgin getrennt schaltbar
 - periodendauermessung
