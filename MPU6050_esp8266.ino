@@ -44,6 +44,7 @@ THE SOFTWARE.
 #define LOGDELAY 1   //ms
 #define LOOPDELAY 1000 //ms
 #define RAMLOGSIZE 1024
+#define RESULTLOGSIZE 100
 #define I2CBUS 4,5       //this is nodemcu port 1,2 see: https://github.com/nodemcu/nodemcu-devkit-v1.0#pin-map
 
 #define LOG_STOP 0
@@ -74,10 +75,16 @@ ESP8266HTTPUpdateServer httpUpdater;
 File fsUploadFile;
 
 short logstate = LOG_STOP;
+unsigned short rptr=0;
 unsigned short dptr=0;
 unsigned short dbegin=0;
 
 unsigned long lasttime=0;
+
+struct res{
+    unsigned long time;
+    uint16_t gmax;
+} results[RESULTLOGSIZE];
 
 struct dat{
     unsigned long time;
@@ -107,18 +114,47 @@ MPU6050 mpu;
 //MPU6050 mpu(0x69); // <-- use for AD0 high
 
 int16_t gx, gy, gz;
+int16_t gxlast=0;
+int16_t gylast=0;
+int16_t gzlast=0;
+uint16_t gxmax=0;
+uint16_t gymax=0;
+uint16_t gzmax=0;
 int16_t ax, ay, az;
 uint8_t logdelay=LOGDELAY;
 uint16_t loopdelay=LOOPDELAY;
+uint16_t gyrosquelch=100;
 
 File logfile;
 
 const int led=13;
 bool blinkState = false;
 
+// ich weiss nicht, weshalb max als nicht defined angemeckert wird
+int imax(int x, int y){
+    if (x>y) return x;
+    else return y;
+}
+
+int8_t sign(int x){
+    if (x>0) return 1;
+    if (x<0) return -1;
+    if (x=0) return 0;
+}
+
 void toggle_LED(){
     blinkState = !blinkState;
     digitalWrite(led, blinkState);
+}
+
+uint16_t mpu_get_gyro_fs(){
+    switch(mpu.getFullScaleGyroRange()){
+        case 0: return 250;
+        case 1: return 500;
+        case 2: return 1000;
+        case 3: return 2000;
+        default: return 0;
+    }
 }
 
 void handleRoot(){
@@ -133,6 +169,11 @@ void handleRoot(){
             break;
         default:
             msg += "fault";
+    }
+    if (rptr>0){
+        for (uint8_t i=1;i++;i<=rptr){
+            msg += String(results[i].time - results[i-1].time) + "00 us | " + results[i].gmax + "</br>";
+        }
     }
     server.send(200,"text/html", msg);
 }
@@ -205,9 +246,13 @@ void handleLog(){
         if (argname=="key")
             rxkey = argval.toInt();
         if (argname=="start"){
+            rptr=0;
             newlog();
-            logfile=SPIFFS.open("/data.txt","a");
-            logfile.println(tempstr());
+            logfile=SPIFFS.open("/data/0.txt","a");
+            logfile.println("# MPUID:"+String(mpu.getDeviceID()));
+            logfile.println("# Temperature="+tempstr());
+            logfile.println("# GyroFullScale="+String(mpu_get_gyro_fs()));
+            logfile.println("# Time/100us\t");
             Serial.println("temp:"+tempstr());
             logfile.close();
             logstate = LOG_START;
@@ -269,13 +314,13 @@ void handleFile(){
             while(dir.next()){
                 filename = dir.fileName();
                 Serial.print(filename);
-                msg += "<a href=\""+argval+"/"+filename+"\">"+filename+"</a>...<a href=\"file?delete="+filename+"\"&delete</a></br>";
+                msg += "<a href=\""+argval+"/"+filename+"\">"+filename+"</a>...<a href=\"file?delete="+argval+"/"+filename+"\"&delete</a></br>\n";
             }
         }
         if (argname=="delete"){
             if (rxkey==0){
                 txkey=random(1,100000);
-                msg += "You really want to delete " +argval+ "?<a href=\"file?key=" +String(txkey)+ "&delete=" +argval+ "\">yes</a>...<a href=\">NO</a></br>";
+                msg += "You really want to delete " +argval+ "?<a href=\"file?key=" +String(txkey)+ "&delete=" +argval+ "\">yes</a>...<a href=\"/\">NO</a></br>";
             }
             else if (rxkey==txkey){
                 SPIFFS.remove(argval);
@@ -355,7 +400,7 @@ void mpuconfig(){
             else if(argname=="gyrorange"){
                 if (argval!="")
                     mpu.setFullScaleGyroRange(argint);
-                msg = String(mpu.getFullScaleGyroRange());
+                msg = String(mpu_get_gyro_fs());
             }
             
         server.send(200,"text/plain",msg);
@@ -398,15 +443,15 @@ void filedelete(){
 }
             
 void newlog(){
-    Serial.println("Creating new logfileile");
+    Serial.println("Creating new logfile");
     // backup old logfileile
-    if (SPIFFS.exists("/data.txt")){
-        Serial.println("data.txt exists");
-        for (unsigned i=0;i<9999;i++){
-            String backupname=String("/data")+String(i)+".txt";
+    if (SPIFFS.exists("/data/0.txt")){
+        Serial.println("/data/0.txt exists");
+        for (unsigned i=1;i<9999;i++){
+            String backupname=String("/data/")+String(i)+".txt";
             if (!SPIFFS.exists(backupname)){
-                Serial.println("Renaming data.txt to "+backupname);
-                SPIFFS.rename("/data.txt",backupname);
+                Serial.println("Renaming data/0.txt to "+backupname);
+                SPIFFS.rename("/data/0.txt",backupname);
                 break;
             }
         }
@@ -422,6 +467,9 @@ void setup() {
     #else
     WiFi.begin(ssid,password);
     #endif
+
+    if (not SPIFFS.exists("/data"))
+        SPIFFS.openDir("/data");
     newlog();
     
     Wire.begin(I2CBUS);
@@ -483,16 +531,51 @@ void setup() {
 
 
 void loop() {
+    unsigned int time;
 	ESP.wdtDisable();
 	server.handleClient();
 
     // read raw accel/gyro measurements from device
     mpu.getMotion6(&ax, &ay, &az, &gx, &gy, &gz);
+    time = micros()/100;
     //Serial.printf("%lu,%d,%d,%d\r",micros(),ax,ay,az);
     //mpu.getAcceleration(&ax, &ay, &az);
     //mpu.getRotation(&gx, &gy, &gz);
 
-    data[dptr].time = micros()/100;
+    gxmax=imax(gxmax,abs(gx));
+    gymax=imax(gymax,abs(gy));
+    gzmax=imax(gzmax,abs(gz));
+
+    if ((abs(gx)>gyrosquelch)
+        or (abs(gy)>gyrosquelch)
+        or (abs(gz)>gyrosquelch)
+
+    and ((rptr>0) and (time!=results[rptr-1].time))
+
+    and (
+        ((-sign(gxlast)==sign(gx)) 
+        and (abs(gxmax)>abs(gymax))
+        and (abs(gxmax)>abs(gzmax)))
+      or ((-sign(gylast)==sign(gy)) 
+        and (abs(gymax)>abs(gzmax))
+        and (abs(gymax)>abs(gxmax)))
+      or ((-sign(gzlast)==sign(gz)) 
+        and (abs(gzmax)>abs(gymax))
+        and (abs(gzmax)>abs(gxmax))))){
+            Serial.println(String(time)+"	"+String(gx)+"	"+String(gy)+"	"+String(gz)+"	"+String(gxlast)+"	"+String(gylast)+"	"+String(gzlast));
+            // Wechsel der Schwinungsrichtung erkannt
+            gxmax=gymax=gzmax=-9999;
+            gxlast=gx;
+            gylast=gy;
+            gzlast=gz;
+            if (rptr<RESULTLOGSIZE){
+                results[rptr].gmax=(mpu_get_gyro_fs()*1000*sqrt(gxmax*gxmax+gymax*gymax+gzmax*gzmax))/0x8000;
+                results[rptr].time=time;
+                rptr++;
+                }
+        }
+
+    data[dptr].time = time;
     data[dptr].gx = gx;
     data[dptr].gy = gy;
     data[dptr].gz = gz;
@@ -512,7 +595,7 @@ void loop() {
         //RAM filled
         if (logstate == LOG_START){
             Serial.println("writing ramlog");
-            logfile=SPIFFS.open("/data.txt","a");
+            logfile=SPIFFS.open("/data/0.txt","a");
             Serial.print(String(logfile));
             for (int i=0;i<RAMLOGSIZE;i++){
                 logfile.printf("%lu\t%i\t%i\t%i\t",data[i].time,data[i].gx,data[i].gy,data[i].gz);
@@ -524,8 +607,6 @@ void loop() {
         dptr = 0;
         dbegin= 1;
     } 
-
-   // hier muss die Auswertung rein. Pendelstartdetection, Pendelfrequenz und Anzahl Pendelschwingungen (via Gyrovorzeichenwechsel)
 
     delay(logdelay);
 
