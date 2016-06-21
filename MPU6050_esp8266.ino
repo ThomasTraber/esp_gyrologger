@@ -394,7 +394,27 @@ void mpuinfo(){
     server.send(200,"text/html", msg);
 }
 
-void mpuconfig(){
+void handleCalc(){
+        String msg;
+        String argname, argval;
+        int argint;
+
+        for ( uint8_t i = 0; i < server.args(); i++ ) {
+            argname = server.argName(i);
+            argval = server.arg(i);
+            argint = argval.toInt();
+            Serial.println(server.uri());
+            Serial.print(argname+"="+argval +" "+argint);
+
+            if(argname=="gyrosquelch"){
+                if (argval!="")
+                    gyrosquelch=argint;
+                msg = String(gyrosquelch);
+            }
+        }
+}
+
+void handleMpu(){
         String msg;
         String argname, argval;
         int argint;
@@ -566,7 +586,8 @@ void setup() {
 	server.on ( "/", handleRoot );
     server.on("/log",handleLog);
     server.on("/file",handleFile);
-    server.on("/mpu",mpuconfig);
+    server.on("/mpu",handleMpu);
+    server.on("/calc",handleCalc);
     server.on("/mpuinfo",mpuinfo);
     server.on("/sys",system_html);
     server.on("/system",system_html);
