@@ -367,7 +367,7 @@ void handleFile(){
             while(dir.next()){
                 filename = dir.fileName();
                 Serial.print(filename);
-                msg += "<a href=\""+argval+"/"+filename+"\">"+filename+"</a>...<a href=\"file?delete="+argval+"/"+filename+"\"&delete</a></br>\n";
+                msg += "<a href=\""+filename+"\">"+filename+"</a>...<a href=\"file?delete="+filename+"\">delete</a></br>\n";
             }
         }
         if (argname=="delete"){
@@ -412,6 +412,7 @@ void handleCalc(){
                 msg = String(gyrosquelch);
             }
         }
+        server.send(200,"text/plain",msg);
 }
 
 void handleMpu(){
@@ -622,29 +623,34 @@ void loop() {
         or (abs(gy)>gyrosquelch)
         or (abs(gz)>gyrosquelch))
     and 
-        ((rptr>0) and (time!=results[rptr-1].time))
+        ( ((rptr>0) and (time!=results[rptr-1].time)) or (rptr==0))
     and (
         ((-sign(gxlast)==sign(gx)) 
         and (abs(gxmax)>abs(gymax))
-        and (abs(gxmax)>abs(gzmax)))
+        and (abs(gxmax)>abs(gzmax))
+        )
       or ((-sign(gylast)==sign(gy)) 
         and (abs(gymax)>abs(gzmax))
-        and (abs(gymax)>abs(gxmax)))
+        and (abs(gymax)>abs(gxmax))
+        )
       or ((-sign(gzlast)==sign(gz)) 
         and (abs(gzmax)>abs(gymax))
-        and (abs(gzmax)>abs(gxmax))))){
+        and (abs(gzmax)>abs(gxmax))
+            )
+          )
+        ){
             Serial.println(String(time)+"	"+String(gx)+"	"+String(gy)+"	"+String(gz)+"	"+String(gxlast)+"	"+String(gylast)+"	"+String(gzlast));
             // Wechsel der Schwinungsrichtung erkannt
-            gxmax=gymax=gzmax=-9999;
-            gxlast=gx;
-            gylast=gy;
-            gzlast=gz;
             if (rptr<RESULTLOGSIZE){
                 results[rptr].gmax=(mpu_get_gyro_fs()*1000*sqrt(gxmax*gxmax+gymax*gymax+gzmax*gzmax))/0x8000;
                 results[rptr].time=time;
                 rptr++;
                 }
-        }
+            gxmax=gymax=gzmax=0;
+    }
+    gxlast=gx;
+    gylast=gy;
+    gzlast=gz;
 
     data[dptr].time = time;
     data[dptr].gx = gx;
