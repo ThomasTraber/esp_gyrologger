@@ -58,7 +58,7 @@ THE SOFTWARE.
 #include "/home/tt/sketchbook/system.inc"
 #include "/home/tt/sketchbook/web.inc"
 
-void newlog();
+void backuplog();
 
 const char* myhostname = "gyro";
 
@@ -157,6 +157,55 @@ uint16_t mpu_get_gyro_fs(){
     }
 }
 
+uint16_t mpu_get_acc_fs(){
+    switch(mpu.getFullScaleAccelRange()){
+        case 0: return 2;
+        case 1: return 4;
+        case 2: return 8;
+        case 3: return 16;
+        default: return 0;
+    }
+}
+
+uint16_t mpu_get_lpf(){
+    switch(mpu.getDLPFMode()){
+        case 0: return 256;
+        case 1: return 188;       
+        case 2: return 98;
+        case 3: return 42;
+        case 4: return 20;
+        case 5: return 10;
+        case 6: return 5;
+        default: return 0;
+    }
+}
+
+uint16_t mpu_set_lpf(uint16_t bw){
+    uint8_t m,i=0;
+    uint16_t table[8]={256,188,98,42,20,10,5,0};
+    do{
+        if (bw>=table[i]){
+            mpu.setDLPFMode(i);
+            break;
+        }
+        i++;
+    }while(1); 
+    return mpu_get_lpf();
+}
+
+uint16_t mpu_get_hpf(){
+    switch(mpu.getDHPFMode()){
+        case 0: return 0;
+        case 1: return 5000;       
+        case 2: return 2500;
+        case 3: return 1250;
+        case 4: return 630;
+        case 5: return 10;
+        case 6: return 9999;
+        default: return 888888;
+    }
+}
+
 void handleRoot(){
     String msg="<html><head><title>Gyrologger</title><style>body{background-color: #AAAAAA; font-family: Arial, Helvetica, Sans-Serif; Color: #000000; }</style></head><body>";
     msg += "Logger: ";
@@ -170,8 +219,9 @@ void handleRoot(){
         default:
             msg += "fault";
     }
+    msg += "</br>\n";
     if (rptr>0){
-        for (uint8_t i=1;i++;i<=rptr){
+        for (uint8_t i=1;i<=rptr;i++){
             msg += String(results[i].time - results[i-1].time) + "00 us | " + results[i].gmax + "</br>";
         }
     }
@@ -247,11 +297,14 @@ void handleLog(){
             rxkey = argval.toInt();
         if (argname=="start"){
             rptr=0;
-            newlog();
+            backuplog();
             logfile=SPIFFS.open("/data/0.txt","a");
             logfile.println("# MPUID:"+String(mpu.getDeviceID()));
             logfile.println("# Temperature="+tempstr());
             logfile.println("# GyroFullScale="+String(mpu_get_gyro_fs()));
+            logfile.println("# AccFullScale="+String(mpu_get_acc_fs()));
+            logfile.println("# LowPassFilter="+String(mpu_get_lpf()));
+            logfile.println("# HighPassFilter="+String(mpu_get_hpf()));
             logfile.println("# Time/100us\t");
             Serial.println("temp:"+tempstr());
             logfile.close();
@@ -327,13 +380,10 @@ void handleFile(){
                 msg+=argval+" deleted";
             }
         }
-                 
     }
     msg +="</body></html>";
     server.send(200,"text/html",msg);
-
 }
-    
 
 void mpuinfo(){
     String msg="<html><head><title>MPU Info</title><style>body{background-color: #AAAAAA; font-family: Arial, Helvetica, Sans-Serif; Color: #000000; }</style></head><body>";
@@ -384,13 +434,14 @@ void mpuconfig(){
                 }
             else if(argname=="lpf"){
                 if (argval!="")
-                    mpu.setDLPFMode(argint);
-                msg = String(mpu.getDLPFMode());
+                    //mpu.setDLPFMode(argint);
+                    mpu_set_lpf(argint);
+                msg = String(mpu_get_lpf());
             }
             else if(argname=="hpf"){
                 if (argval!="")
                     mpu.setDHPFMode(argint);
-                msg = String(mpu.getDHPFMode());
+                msg = String(mpu_get_hpf());
             }
             else if(argname=="accrange"){
                 if (argval!="")
@@ -406,7 +457,6 @@ void mpuconfig(){
         server.send(200,"text/plain",msg);
     }
 }
-
 
 void filedelete(){
         String filename="nothing";
@@ -442,7 +492,7 @@ void filedelete(){
                 server.send(200,"text/html",msg);
 }
             
-void newlog(){
+void backuplog(){
     Serial.println("Creating new logfile");
     // backup old logfileile
     if (SPIFFS.exists("/data/0.txt")){
@@ -470,7 +520,7 @@ void setup() {
 
     if (not SPIFFS.exists("/data"))
         SPIFFS.openDir("/data");
-    newlog();
+    backuplog();
     
     Wire.begin(I2CBUS);
 
@@ -546,12 +596,12 @@ void loop() {
     gymax=imax(gymax,abs(gy));
     gzmax=imax(gzmax,abs(gz));
 
-    if ((abs(gx)>gyrosquelch)
+    if (
+        ((abs(gx)>gyrosquelch)
         or (abs(gy)>gyrosquelch)
-        or (abs(gz)>gyrosquelch)
-
-    and ((rptr>0) and (time!=results[rptr-1].time))
-
+        or (abs(gz)>gyrosquelch))
+    and 
+        ((rptr>0) and (time!=results[rptr-1].time))
     and (
         ((-sign(gxlast)==sign(gx)) 
         and (abs(gxmax)>abs(gymax))
