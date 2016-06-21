@@ -41,7 +41,7 @@ THE SOFTWARE.
 */
 
 //#define ACCESS_POINT
-#define LOGDELAY 1   //ms
+#define LOGDELAY 5   //ms
 #define LOOPDELAY 1000 //ms
 #define RAMLOGSIZE 1024
 #define RESULTLOGSIZE 100
@@ -120,10 +120,13 @@ int16_t gzlast=0;
 uint16_t gxmax=0;
 uint16_t gymax=0;
 uint16_t gzmax=0;
+int32_t gxsum=0;
+int32_t gysum=0;
+int32_t gzsum=0;
 int16_t ax, ay, az;
 uint8_t logdelay=LOGDELAY;
 uint16_t loopdelay=LOOPDELAY;
-uint16_t gyrosquelch=100;
+uint16_t gyrosquelch=1000;       //raw sensor data
 
 File logfile;
 
@@ -474,6 +477,8 @@ void handleMpu(){
                     mpu.setFullScaleGyroRange(argint);
                 msg = String(mpu_get_gyro_fs());
             }
+            else
+                msg = "Unknown command";
             
         server.send(200,"text/plain",msg);
     }
@@ -548,6 +553,7 @@ void setup() {
     mpu.initialize();
     mpu.setRate(10);
     mpu.setFullScaleGyroRange(MPU6050_GYRO_FS_2000);
+    mpu_set_lpf(50);
     mpu.setFullScaleAccelRange(MPU6050_ACCEL_FS_8);
     mpu.setTempSensorEnabled(1);
 
@@ -617,6 +623,9 @@ void loop() {
     gxmax=imax(gxmax,abs(gx));
     gymax=imax(gymax,abs(gy));
     gzmax=imax(gzmax,abs(gz));
+    gxsum+=gx;
+    gysum+=gy;
+    gzsum+=gz;
 
     if (
         ((abs(gx)>gyrosquelch)
@@ -626,20 +635,20 @@ void loop() {
         ( ((rptr>0) and (time!=results[rptr-1].time)) or (rptr==0))
     and (
         ((-sign(gxlast)==sign(gx)) 
-        and (abs(gxmax)>abs(gymax))
-        and (abs(gxmax)>abs(gzmax))
+        and (abs(gxsum)>abs(gysum))
+        and (abs(gxsum)>abs(gzsum))
         )
       or ((-sign(gylast)==sign(gy)) 
-        and (abs(gymax)>abs(gzmax))
-        and (abs(gymax)>abs(gxmax))
+        and (abs(gysum)>abs(gzsum))
+        and (abs(gysum)>abs(gxsum))
         )
       or ((-sign(gzlast)==sign(gz)) 
-        and (abs(gzmax)>abs(gymax))
-        and (abs(gzmax)>abs(gxmax))
+        and (abs(gzsum)>abs(gysum))
+        and (abs(gzsum)>abs(gxsum))
             )
           )
         ){
-            Serial.println(String(time)+"	"+String(gx)+"	"+String(gy)+"	"+String(gz)+"	"+String(gxlast)+"	"+String(gylast)+"	"+String(gzlast));
+            Serial.println(String(time)+" "+String(gx)+" "+String(gy)+"	"+String(gz)+" "+String(gxlast)+" "+String(gylast)+" "+String(gzlast) + " " +String(gxsum)+" "+String(gysum)+" "+String(gzsum));
             // Wechsel der Schwinungsrichtung erkannt
             if (rptr<RESULTLOGSIZE){
                 results[rptr].gmax=(mpu_get_gyro_fs()*1000*sqrt(gxmax*gxmax+gymax*gymax+gzmax*gzmax))/0x8000;
@@ -647,6 +656,7 @@ void loop() {
                 rptr++;
                 }
             gxmax=gymax=gzmax=0;
+            gxsum=gysum=gzsum=0;
     }
     gxlast=gx;
     gylast=gy;
