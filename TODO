@@ -1,7 +1,5 @@
+- MPUID zeigt immer 52. Deshalb ESP ID ins Logfile
 - Schwelle für Richtungsdetector (Zeit und Pegel)
-- fullscale setting via http
-- dirlister hinrichten
-- Reparieren: directory lister mit Klickie Options für jedes File (show, delete) 
 - rtc mit ntp-call
 - acc- und gyrologgin getrennt schaltbar
 - periodendauermessung

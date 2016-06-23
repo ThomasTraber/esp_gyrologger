@@ -320,8 +320,10 @@ void handleLog(){
             msg += "Data Logging stopped";
         }
         if (argname=="delay"){
-            logdelay = argint;
-            msg += "Log delay set to "+String(argint);
+            if (argva!=""){
+                logdelay = argint;
+            }
+            msg += String(argint);
         }
     }
     msg +="</body></html>";
