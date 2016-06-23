@@ -45,7 +45,8 @@ THE SOFTWARE.
 #define LOOPDELAY 1000 //ms
 #define RAMLOGSIZE 1024
 #define RESULTLOGSIZE 100
-#define I2CBUS 4,5       //this is nodemcu port 1,2 see: https://github.com/nodemcu/nodemcu-devkit-v1.0#pin-map
+//#define I2CBUS 4,5       //this is nodemcu port 1,2 see: https://github.com/nodemcu/nodemcu-devkit-v1.0#pin-map
+#define I2CBUS 12,13       //Zahnseideschachtel
 
 #define LOG_STOP 0
 #define LOG_START 1
@@ -537,19 +538,20 @@ void backuplog(){
 void setup() {
 	ESP.wdtDisable();
     Serial.begin(115200);
+    Serial.println("Entering Setup");
     SPIFFS.begin();
     #ifdef ACCESS_POINT
     WiFi.softAP(apssid,appwd);
     #else
     WiFi.begin(ssid,password);
     #endif
-
     if (not SPIFFS.exists("/data"))
         SPIFFS.openDir("/data");
     backuplog();
     
     Wire.begin(I2CBUS);
 
+    Serial.println("Initializing MPU");
     mpu.initialize();
     mpu.setRate(10);
     mpu.setFullScaleGyroRange(MPU6050_GYRO_FS_2000);
@@ -580,12 +582,9 @@ void setup() {
     Serial.print("\n");
     */
 
-    pinMode(led, OUTPUT);
     while (WiFi.status() != WL_CONNECTED) {
     delay(500);
-    toggle_LED();
     }
-    digitalWrite(led, true);
 
     MDNS.begin(myhostname);
     httpUpdater.setup(&server);
