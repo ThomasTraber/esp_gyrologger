@@ -1,0 +1,20 @@
+= Zahnseidenschachtel =
+
+== Steckerbelegung ==
+
+|Schachtel |    Programmierkabel|
+
+1   GND         black      
+2   VCC         red
+3   TXD         green
+4   RXD         white
+5   GPIO0 
+6   CH_PD
+
+== Programmierung == 
+
+- Reset auf GND
+- GPIO0 auf GND
+- Reset open
+> esptool.sh filename.bin 
+
