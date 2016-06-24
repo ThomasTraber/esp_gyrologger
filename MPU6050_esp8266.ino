@@ -51,6 +51,7 @@ THE SOFTWARE.
 #define LOG_STOP 0
 #define LOG_START 1
 
+#include <buildinfo.h>
 #include <ESP8266WiFi.h>
 #include <ESP8266WebServer.h>
 #include <ESP8266mDNS.h>
@@ -63,13 +64,10 @@ void backuplog();
 
 const char* myhostname = "gyro";
 
-#ifdef ACCESS_POINT 
 const char *Host="192.168.4.255";
-const char *apssid = "VMACCEL";
-const char *appwd = "velomobil";
-#else
+const char *apssid = "gyro";
+const char *appwd = "velomobil";        // at least 8 characters are required
 #include "/home/tt/sketchbook/secrets.inc"
-#endif
 
 ESP8266WebServer server ( 80 );
 ESP8266HTTPUpdateServer httpUpdater;
@@ -206,7 +204,7 @@ uint16_t mpu_get_hpf(){
         case 4: return 630;
         case 5: return 10;
         case 6: return 9999;
-        default: return 888888;
+        default: return 8888;
     }
 }
 
@@ -402,6 +400,40 @@ void mpuinfo(){
     server.send(200,"text/html", msg);
 }
 
+void handleConfig(){
+        String msg;
+        String argname, argval;
+        int argint;
+
+        for ( uint8_t i = 0; i < server.args(); i++ ) {
+            argname = server.argName(i);
+            argval = server.arg(i);
+            argint = argval.toInt();
+            Serial.println(server.uri());
+            Serial.print(argname+"="+argval +" "+argint);
+
+            if(argname=="ssid"){
+                if (argval!=""){
+                    File f = SPIFFS.open("/ssid","w");
+                    f.print(argval);                     
+                    f.close();
+                    msg = "ssid changed";
+                }else
+                    msg = "missing ssid string";
+            }
+            if(argname=="password"){
+                if (argval!=""){
+                    File f = SPIFFS.open("/password","w");
+                    f.print(argval);                     
+                    f.close();
+                    msg = "password changed";
+                }else
+                    msg = "missing password string";
+            }
+        }
+        server.send(200,"text/plain",msg);
+}
+
 void handleCalc(){
         String msg;
         String argname, argval;
@@ -540,15 +572,25 @@ void backuplog(){
 }
 
 void setup() {
+    int timeoutcntr;
 	ESP.wdtDisable();
     Serial.begin(115200);
     Serial.println("Entering Setup");
     SPIFFS.begin();
-    #ifdef ACCESS_POINT
-    WiFi.softAP(apssid,appwd);
-    #else
-    WiFi.begin(ssid,password);
-    #endif
+    if(SPIFFS.exists("/ssid")){
+        File f = SPIFFS.open("/ssid","r"); 
+        ssid = f.readString();
+        Serial.println("Reading SSID: "+ssid); 
+        f.close();
+    }  
+    if(SPIFFS.exists("/password")){
+        File f = SPIFFS.open("/password","r"); 
+        password = f.readString();
+        Serial.println("Reading password:"+password); 
+        f.close();
+    }  
+    WiFi.mode(WIFI_STA);
+    WiFi.begin(ssid.c_str(),password.c_str());
     if (not SPIFFS.exists("/data"))
         SPIFFS.openDir("/data");
     backuplog();
@@ -563,33 +605,14 @@ void setup() {
     mpu.setFullScaleAccelRange(MPU6050_ACCEL_FS_8);
     mpu.setTempSensorEnabled(1);
 
-    // use the code below to change accel/gyro offset values
-    /*
-    Serial.println("Updating internal sensor offsets...");
-    // -76	-2359	1688	0	0	0
-    Serial.print(mpu.getXAccelOffset()); Serial.print("\t"); // -76
-    Serial.print(mpu.getYAccelOffset()); Serial.print("\t"); // -2359
-    Serial.print(mpu.getZAccelOffset()); Serial.print("\t"); // 1688
-    Serial.print(mpu.getXGyroOffset()); Serial.print("\t"); // 0
-    Serial.print(mpu.getYGyroOffset()); Serial.print("\t"); // 0
-    Serial.print(mpu.getZGyroOffset()); Serial.print("\t"); // 0
-    Serial.print("\n");
-    mpu.setXGyroOffset(220);
-    mpu.setYGyroOffset(76);
-    mpu.setZGyroOffset(-85);
-    Serial.print(mpu.getXAccelOffset()); Serial.print("\t"); // -76
-    Serial.print(mpu.getYAccelOffset()); Serial.print("\t"); // -2359
-    Serial.print(mpu.getZAccelOffset()); Serial.print("\t"); // 1688
-    Serial.print(mpu.getXGyroOffset()); Serial.print("\t"); // 0
-    Serial.print(mpu.getYGyroOffset()); Serial.print("\t"); // 0
-    Serial.print(mpu.getZGyroOffset()); Serial.print("\t"); // 0
-    Serial.print("\n");
-    */
-
-    while (WiFi.status() != WL_CONNECTED) {
-    delay(500);
+    for (timeoutcntr=0; (WiFi.status() != WL_CONNECTED) and (timeoutcntr<10); timeoutcntr++) {
+        delay(500);
     }
-
+    Serial.println("timeoutcntr="+String(timeoutcntr));
+    if (timeoutcntr==10){
+        WiFi.mode(WIFI_AP);
+        WiFi.softAP(apssid,appwd);
+    } 
     MDNS.begin(myhostname);
     httpUpdater.setup(&server);
     server.begin();
@@ -598,6 +621,7 @@ void setup() {
     server.on("/file",handleFile);
     server.on("/mpu",handleMpu);
     server.on("/calc",handleCalc);
+    server.on("/config",handleConfig);
     server.on("/mpuinfo",mpuinfo);
     server.on("/sys",system_html);
     server.on("/system",system_html);

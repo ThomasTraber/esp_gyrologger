@@ -47,7 +47,7 @@ UPLOAD_RESET ?= ck
 
 # OTA parameters
 ESP_ADDR ?= esp-eval3.fritz.box
-ESP_PORT ?= 8266
+ESP_PORT ?= 8080  
 #ESP_PWD ?= 123
 #====================================================================================
 # The area below should normally not need to be edited
@@ -172,7 +172,8 @@ upload: all
 
 ota: all
 	#$(OTA_TOOL) -i $(ESP_ADDR) -p $(ESP_PORT) -a $(ESP_PWD) -f $(MAIN_EXE)
-	$(OTA_TOOL) -i $(ESP_ADDR) -p $(ESP_PORT)  -f $(MAIN_EXE)
+	#$(OTA_TOOL) -i $(ESP_ADDR) -p $(ESP_PORT)  -f $(MAIN_EXE)
+	curl -F update=@$(MAIN_EXE) http://$(ESP_ADDR)/update
 
 clean:
 	echo Removing all intermediate build files...
@@ -192,5 +193,5 @@ all: $(OBJ_DIR) $(BUILD_INFO_H) $(MAIN_EXE)
 
 ifndef VERBOSE
 # Set silent mode as default
-MAKEFLAGS += --silent
+#MAKEFLAGS += --silent
 endif
