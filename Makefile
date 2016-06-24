@@ -195,3 +195,11 @@ ifndef VERBOSE
 # Set silent mode as default
 #MAKEFLAGS += --silent
 endif
+
+help: help/help.html
+
+help/help.html: help/help.md
+	pandoc --to=html --standalone $< -o $@
+
+upload_files: 
+	uploadfiles.sh help

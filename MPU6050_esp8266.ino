@@ -255,10 +255,13 @@ void handleFileUpload(){
 void handleNotFound() {
     String path = server.uri();
     if(path.endsWith("/")) path += "index.htm";
-    String contentType = getContentType(path);
     Serial.println("not found");
     Serial.println(path);
+    if (not SPIFFS.exists(path))
+        if (SPIFFS.exists(path+".html"))
+            path += ".html";
     if (SPIFFS.exists(path)){
+        String contentType = getContentType(path);
         File file = SPIFFS.open(path, "r");
 	    ESP.wdtDisable();
         server.streamFile(file,contentType);

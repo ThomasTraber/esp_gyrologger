@@ -1,4 +1,3 @@
-- Compiledate und git-version in sysinfo
 - Schwelle für Richtungsdetector (Zeit und Pegel)
 - rtc mit ntp-call
 - acc- und gyrologgin getrennt schaltbar
