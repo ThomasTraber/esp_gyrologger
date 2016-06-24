@@ -1,3 +1,7 @@
+Do 23. Jun 21:24:16 CEST 2016
+Liegt es an der falsch reporteten Flash Chip Size (wg. unknown ID), daß das OTA nicht geht.
+
+
 Mi 8. Jun 23:42:13 CEST 2016
 seit dem zusätzlichen Loggen der Beschleunigungssensordaten ist das Samplinginterval 2.8ms. Mit mpu?rate= kann ich das nicht ändern.
 

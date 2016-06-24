@@ -43,10 +43,10 @@ THE SOFTWARE.
 //#define ACCESS_POINT
 #define LOGDELAY 5   //ms
 #define LOOPDELAY 1000 //ms
-#define RAMLOGSIZE 1024
+#define RAMLOGSIZE 1024  //512 //1024
 #define RESULTLOGSIZE 100
-//#define I2CBUS 4,5       //this is nodemcu port 1,2 see: https://github.com/nodemcu/nodemcu-devkit-v1.0#pin-map
-#define I2CBUS 12,13       //Zahnseideschachtel
+#define I2CBUS 4,5       //this is nodemcu port 1,2 see: https://github.com/nodemcu/nodemcu-devkit-v1.0#pin-map
+//#define I2CBUS 12,13       //Zahnseideschachtel
 
 #define LOG_STOP 0
 #define LOG_START 1
@@ -303,8 +303,10 @@ void handleLog(){
             rptr=0;
             backuplog();
             logfile=SPIFFS.open("/data/0.txt","a");
-            logfile.println("# MPUID:"+String(mpu.getDeviceID()));
+            logfile.println("# ESPID:"+String(ESP.getChipId(),HEX));
+            logfile.println("# MPUID:"+String(mpu.getDeviceID(),HEX));
             logfile.println("# Temperature="+tempstr());
+            logfile.println("# LogDelay="+String(logdelay));
             logfile.println("# GyroFullScale="+String(mpu_get_gyro_fs()));
             logfile.println("# AccFullScale="+String(mpu_get_acc_fs()));
             logfile.println("# LowPassFilter="+String(mpu_get_lpf()));
@@ -320,7 +322,7 @@ void handleLog(){
             msg += "Data Logging stopped";
         }
         if (argname=="delay"){
-            if (argva!=""){
+            if (argval!=""){
                 logdelay = argint;
             }
             msg += String(argint);

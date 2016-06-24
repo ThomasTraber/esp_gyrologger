@@ -1,4 +1,4 @@
-- MPUID zeigt immer 52. Deshalb ESP ID ins Logfile
+- Compiledate und git-version in sysinfo
 - Schwelle für Richtungsdetector (Zeit und Pegel)
 - rtc mit ntp-call
 - acc- und gyrologgin getrennt schaltbar
