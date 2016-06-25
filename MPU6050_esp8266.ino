@@ -40,7 +40,8 @@ THE SOFTWARE.
 - Progmem warning bearbeiten
 */
 
-//#define ACCESS_POINT
+
+#define CACHE_SIZE 256*1024  // Bytes
 #define LOGDELAY 5   //ms
 #define LOOPDELAY 1000 //ms
 #define RAMLOGSIZE 1024  //512 //1024
@@ -136,6 +137,8 @@ uint16_t loopdelay=LOOPDELAY;
 uint16_t gyrosquelch=1000;       //raw sensor data
 
 File logfile;
+File cache;
+uint32_t cacheptr=0;
 
 const int led=13;
 bool blinkState = false;
@@ -155,6 +158,41 @@ int8_t sign(int x){
 void toggle_LED(){
     blinkState = !blinkState;
     digitalWrite(led, blinkState);
+}
+
+uint16_t cache_read_uint16(){
+    uint16_t val = cache.read();
+    val |= cache.read()<<8;
+    return val;
+}
+
+int16_t cache_read_int16(){
+    int16_t val = cache.read();
+    val |= cache.read()<<8;
+    return val;
+}
+uint32_t cache_read_uint32(){
+    uint32_t val = cache.read();
+    val |= (cache.read()<<8);
+    val |= (cache.read()<<16);
+    val |= (cache.read()<<24);
+    return val;
+}
+
+void cache_write_uint16(uint16_t val){
+    cache.write(val&0xFF);
+    cache.write((val>>8)&0xFF);
+}
+
+void cache_write_int16(int16_t val){
+    cache.write(val&0xFF);
+    cache.write((val>>8)&0xFF);
+}
+void cache_write_uint32(uint32_t val){
+    cache.write(val&0xFF);
+    cache.write((val>>8)&0xff);
+    cache.write((val>>16)&0xff);
+    cache.write((val>>24)&0xff);
 }
 
 uint16_t mpu_get_gyro_fs(){
@@ -372,6 +410,23 @@ void handleLog(){
             EEPROM.write(1,0);
             EEPROM.commit();
             msg += "done";
+        }
+        if (argname=="cache"){
+            unsigned long fpos = cache.position();
+            cache.seek(0,SeekSet);
+            msg = "";
+            //server.send(200,"text/plain",msg);
+            //String header;
+            //server._prepareHeader(header, 200, "text/plain", CONTENT_LENGTH_UNKNOWN);
+            //server.sendContent(header);
+
+            do{
+                msg = String(cache_read_uint32())+"\t"+String(cache_read_int16())+"\t"+String(cache_read_int16())+"\t"+String(cache_read_int16())+"\n";
+                server.sendContent(msg);
+            }while(cache.position()<fpos);
+            cache.seek(fpos,SeekSet);
+            //server.send(200,"text/plain",msg);
+            return;
         }
                 
     }
@@ -639,6 +694,9 @@ void setup() {
     WiFi.begin(ssid.c_str(),password.c_str());
     if (not SPIFFS.exists("/data"))
         SPIFFS.openDir("/data");
+    cache = SPIFFS.open("/data/cache","w+");
+    for(int i=0;i<CACHE_SIZE;i++) cache.write(0);
+    cache.seek(0,SeekSet);
     
     Wire.begin(I2CBUS);
 
@@ -748,6 +806,12 @@ void loop() {
     data[dptr].ax = ax;
     data[dptr].ay = ay;
     data[dptr].az = az;
+    if (logstate == LOG_START){
+        cache_write_uint32(time);
+        cache_write_int16(gx);
+        cache_write_int16(gy);
+        cache_write_int16(gz);
+    }
     dptr++;
 
     if (dbegin!=0){
