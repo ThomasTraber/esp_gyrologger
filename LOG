@@ -1,3 +1,7 @@
+Sa 25. Jun 11:16:47 CEST 2016
+SPIFFS mit variabler Dateigröße ist zu langsam.
+Wir probieren
+
 Sa 25. Jun 10:19:52 CEST 2016
 Wenn das Filesystem halb voll ist, steigt die Zeit zum Logfileschreiben von 0.25 auf 1 Sekunde (und dann sogar 2s) an. File System löschen bringt
 nicht viel. Man muss neue formatieren.
