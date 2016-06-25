@@ -265,6 +265,10 @@ void handleNotFound() {
     if(path.endsWith("/")) path += "index.htm";
     Serial.println("not found");
     Serial.println(path);
+    if (path=="/data/g.txt")
+        path = "/data/g"+String(filenamecntr)+".txt";
+    if (path=="/data/a.txt")
+        path = "/data/a"+String(filenamecntr)+".txt";
     if (not SPIFFS.exists(path))
         if (SPIFFS.exists(path+".html"))
             path += ".html";
