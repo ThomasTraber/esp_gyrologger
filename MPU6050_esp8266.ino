@@ -50,6 +50,8 @@ THE SOFTWARE.
 
 #define LOG_STOP 0
 #define LOG_START 1
+#define LOG_GYRO 1
+#define LOG_ACC 2
 
 #include <buildinfo.h>
 #include <ESP8266WiFi.h>
@@ -74,6 +76,7 @@ ESP8266HTTPUpdateServer httpUpdater;
 File fsUploadFile;
 
 short logstate = LOG_STOP;
+uint8_t logmode = LOG_GYRO;
 unsigned short rptr=0;
 unsigned short dptr=0;
 unsigned short dbegin=0;
@@ -263,6 +266,7 @@ void handleNotFound() {
     if (SPIFFS.exists(path)){
         String contentType = getContentType(path);
         File file = SPIFFS.open(path, "r");
+        ESP.wdtFeed();
 	    ESP.wdtDisable();
         server.streamFile(file,contentType);
         file.close();
@@ -303,7 +307,7 @@ void handleLog(){
         if (argname=="start"){
             rptr=0;
             backuplog();
-            logfile=SPIFFS.open("/data/0.txt","a");
+            logfile=SPIFFS.open("/data/g0.txt","a");
             logfile.println("# ESPID:"+String(ESP.getChipId(),HEX));
             logfile.println("# MPUID:"+String(mpu.getDeviceID(),HEX));
             logfile.println("# Temperature="+tempstr());
@@ -328,6 +332,28 @@ void handleLog(){
             }
             msg += String(argint);
         }
+        if (argname=="delete_all"){
+            if (rxkey==0){
+                txkey=random(1,100000);
+                msg += "You really want to delete all logfiles?<a href=\"log?key=" +String(txkey)+ "&delete_all=\">yes</a>...<a href=\"/\">NO</a></br>";
+            }
+            else if (rxkey==txkey){
+                Dir dir = SPIFFS.openDir(argval);
+                String filename ;
+                while(dir.next()){
+                    filename = dir.fileName();
+                    SPIFFS.remove(filename);
+                    Serial.print("removing"+filename);
+                    msg += "deleting"+filename+"</br>\n";
+                }
+            }
+        }
+        if (argname=="mode"){
+            if (argval.startsWith("a")) logmode = LOG_ACC;
+            else if (argval.startsWith("g")) logmode = LOG_GYRO;
+            else if (argval.startsWith("b")) logmode = LOG_GYRO|LOG_ACC;
+        }
+                
     }
     msg +="</body></html>";
     server.send(200,"text/html",msg);
@@ -561,13 +587,13 @@ void filedelete(){
 void backuplog(){
     Serial.println("Creating new logfile");
     // backup old logfileile
-    if (SPIFFS.exists("/data/0.txt")){
-        Serial.println("/data/0.txt exists");
+    if (SPIFFS.exists("/data/g0.txt")){
+        Serial.println("/data/g0.txt exists");
         for (unsigned i=1;i<9999;i++){
-            String backupname=String("/data/")+String(i)+".txt";
+            String backupname=String("/data/g")+String(i)+".txt";
             if (!SPIFFS.exists(backupname)){
-                Serial.println("Renaming data/0.txt to "+backupname);
-                SPIFFS.rename("/data/0.txt",backupname);
+                Serial.println("Renaming data/g0.txt to "+backupname);
+                SPIFFS.rename("/data/g0.txt",backupname);
                 break;
             }
         }
@@ -644,11 +670,18 @@ void loop() {
 	server.handleClient();
 
     // read raw accel/gyro measurements from device
-    mpu.getMotion6(&ax, &ay, &az, &gx, &gy, &gz);
+    switch(logmode){
+        case LOG_GYRO | LOG_ACC:
+            mpu.getMotion6(&ax, &ay, &az, &gx, &gy, &gz);break;
+        case LOG_GYRO:
+            mpu.getRotation(&gx, &gy, &gz);break;
+        case LOG_ACC:
+            mpu.getAcceleration(&ax, &ay, &az);break;
+        default:
+            Serial.println("illegal logmode");
+        }
     time = micros()/100;
     //Serial.printf("%lu,%d,%d,%d\r",micros(),ax,ay,az);
-    //mpu.getAcceleration(&ax, &ay, &az);
-    //mpu.getRotation(&gx, &gy, &gz);
 
     gxmax=imax(gxmax,abs(gx));
     gymax=imax(gymax,abs(gy));
@@ -711,15 +744,23 @@ void loop() {
     if (dptr>=RAMLOGSIZE){
         //RAM filled
         if (logstate == LOG_START){
-            Serial.println("writing ramlog");
-            logfile=SPIFFS.open("/data/0.txt","a");
-            Serial.print(String(logfile));
-            for (int i=0;i<RAMLOGSIZE;i++){
-                logfile.printf("%lu\t%i\t%i\t%i\t",data[i].time,data[i].gx,data[i].gy,data[i].gz);
-                logfile.printf("%i\t%i\t%i\t",data[i].ax,data[i].ay,data[i].az);
-                logfile.printf("\n");
-                }
-            logfile.close();
+            unsigned long starttime=millis();
+            Serial.println(String(starttime)+" writing ramlog");
+            if ( logmode & LOG_GYRO ){
+                logfile=SPIFFS.open("/data/g0.txt","a");
+                for (int i=0;i<RAMLOGSIZE;i++){
+                    logfile.printf("%lu\t%i\t%i\t%i\n",data[i].time,data[i].gx,data[i].gy,data[i].gz);
+                    }
+                logfile.close();
+            }
+            if ( logmode & LOG_ACC ){
+                logfile=SPIFFS.open("/data/a0.txt","a");
+                for (int i=0;i<RAMLOGSIZE;i++){
+                    logfile.printf("%lu\t%i\t%i\t%i\n",data[i].time,data[i].ax,data[i].ay,data[i].az);
+                    }
+                logfile.close();
+            }
+            Serial.println(String(millis()-starttime)+" writing finished");
         }
         dptr = 0;
         dbegin= 1;

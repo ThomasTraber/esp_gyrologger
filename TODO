@@ -1,7 +1,15 @@
+- file lister mit file sizes und total usage erweitern
+- analyse, welche Samlingintervalle sinnvoll sind
+- analyse: Berechnung der Winkelposition aus dem Integral der Winkelgeschwindigkeit
+- logram mallocen und vor dem OTA wieder freigeben, damit mehr Samples geloggt werden können, bevor der Filesave kommt.
+- lfd Filenummer ins "EEPROM", 0.txt ist ein Symlink auf die lfd Nummer.  
+- direkter Zugriff auf die RAM-logdaten. Dann kann man mit JS Auswertungen schreiben. 
+- delete all data command
+- periodendauermessung
+- File Streaming Watchdog Reset vermeiden (=> versucht. Hilft nix.)
 - Schwelle für Richtungsdetector (Zeit und Pegel)
 - rtc mit ntp-call
 - acc- und gyrologgin getrennt schaltbar
-- periodendauermessung
 - harry plotter
     - time plots
     - sampling interval histogram
