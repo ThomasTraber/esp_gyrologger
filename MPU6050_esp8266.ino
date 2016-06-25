@@ -59,10 +59,15 @@ THE SOFTWARE.
 #include <ESP8266mDNS.h>
 #include <ESP8266HTTPUpdateServer.h>
 #include <FS.h>
+#include <EEPROM.h>
 #include "/home/tt/sketchbook/system.inc"
 #include "/home/tt/sketchbook/web.inc"
 
-void backuplog();
+uint16_t newlog();
+uint16_t filenamecntr;
+String glogfilename;
+String alogfilename;
+
 
 const char* myhostname = "gyro";
 
@@ -305,20 +310,25 @@ void handleLog(){
         if (argname=="key")
             rxkey = argval.toInt();
         if (argname=="start"){
+            String filename;
             rptr=0;
-            backuplog();
-            logfile=SPIFFS.open("/data/g0.txt","a");
-            logfile.println("# ESPID:"+String(ESP.getChipId(),HEX));
-            logfile.println("# MPUID:"+String(mpu.getDeviceID(),HEX));
-            logfile.println("# Temperature="+tempstr());
-            logfile.println("# LogDelay="+String(logdelay));
-            logfile.println("# GyroFullScale="+String(mpu_get_gyro_fs()));
-            logfile.println("# AccFullScale="+String(mpu_get_acc_fs()));
-            logfile.println("# LowPassFilter="+String(mpu_get_lpf()));
-            logfile.println("# HighPassFilter="+String(mpu_get_hpf()));
-            logfile.println("# Time/100us\t");
-            Serial.println("temp:"+tempstr());
-            logfile.close();
+            filenamecntr = newlog();
+            glogfilename = "/data/g"+String(filenamecntr)+".txt";
+            alogfilename = "/data/a"+String(filenamecntr)+".txt";
+            for(filename=glogfilename;filename!=alogfilename;filename=alogfilename){
+                logfile=SPIFFS.open(filename,"a");
+                logfile.println("# ESPID:"+String(ESP.getChipId(),HEX));
+                logfile.println("# MPUID:"+String(mpu.getDeviceID(),HEX));
+                logfile.println("# Temperature="+tempstr());
+                logfile.println("# LogDelay="+String(logdelay));
+                logfile.println("# GyroFullScale="+String(mpu_get_gyro_fs()));
+                logfile.println("# AccFullScale="+String(mpu_get_acc_fs()));
+                logfile.println("# LowPassFilter="+String(mpu_get_lpf()));
+                logfile.println("# HighPassFilter="+String(mpu_get_hpf()));
+                logfile.println("# Time/100us\t");
+                Serial.println("temp:"+tempstr());
+                logfile.close();
+            }
             logstate = LOG_START;
             msg += "Data Logging started";
             }
@@ -352,6 +362,12 @@ void handleLog(){
             if (argval.startsWith("a")) logmode = LOG_ACC;
             else if (argval.startsWith("g")) logmode = LOG_GYRO;
             else if (argval.startsWith("b")) logmode = LOG_GYRO|LOG_ACC;
+        }
+        if (argname=="reset_fcntr"){
+            EEPROM.write(0,0);
+            EEPROM.write(1,0);
+            EEPROM.commit();
+            msg += "done";
         }
                 
     }
@@ -584,24 +600,21 @@ void filedelete(){
                 server.send(200,"text/html",msg);
 }
             
-void backuplog(){
-    Serial.println("Creating new logfile");
-    // backup old logfileile
-    if (SPIFFS.exists("/data/g0.txt")){
-        Serial.println("/data/g0.txt exists");
-        for (unsigned i=1;i<9999;i++){
-            String backupname=String("/data/g")+String(i)+".txt";
-            if (!SPIFFS.exists(backupname)){
-                Serial.println("Renaming data/g0.txt to "+backupname);
-                SPIFFS.rename("/data/g0.txt",backupname);
-                break;
-            }
-        }
-    }
+uint16_t newlog(){
+    uint16_t fcntr;
+    fcntr = EEPROM.read(0) + (EEPROM.read(1)<<8);
+    Serial.println("Incrementing Filename Counter"+String(fcntr));
+    fcntr++;
+    Serial.println(String(fcntr));;
+    EEPROM.write(0,fcntr&0xFF);
+    EEPROM.write(1,fcntr>>8);
+    EEPROM.commit();
+    return fcntr;                   
 }
 
 void setup() {
     int timeoutcntr;
+    EEPROM.begin(4);
 	ESP.wdtDisable();
     Serial.begin(115200);
     Serial.println("Entering Setup");
@@ -622,7 +635,6 @@ void setup() {
     WiFi.begin(ssid.c_str(),password.c_str());
     if (not SPIFFS.exists("/data"))
         SPIFFS.openDir("/data");
-    backuplog();
     
     Wire.begin(I2CBUS);
 
@@ -747,14 +759,14 @@ void loop() {
             unsigned long starttime=millis();
             Serial.println(String(starttime)+" writing ramlog");
             if ( logmode & LOG_GYRO ){
-                logfile=SPIFFS.open("/data/g0.txt","a");
+                logfile=SPIFFS.open(glogfilename,"a");
                 for (int i=0;i<RAMLOGSIZE;i++){
                     logfile.printf("%lu\t%i\t%i\t%i\n",data[i].time,data[i].gx,data[i].gy,data[i].gz);
                     }
                 logfile.close();
             }
             if ( logmode & LOG_ACC ){
-                logfile=SPIFFS.open("/data/a0.txt","a");
+                logfile=SPIFFS.open(alogfilename,"a");
                 for (int i=0;i<RAMLOGSIZE;i++){
                     logfile.printf("%lu\t%i\t%i\t%i\n",data[i].time,data[i].ax,data[i].ay,data[i].az);
                     }

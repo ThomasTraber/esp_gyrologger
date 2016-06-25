@@ -20,12 +20,14 @@
 #=== Project specific definitions: sketch and list of needed libraries
 SKETCH ?= MPU6050_esp8266.ino 
 LIBS ?= $(ESP_LIBS)/Wire \
+        $(ESP_LIBS)/EEPROM \
         $(ESP_LIBS)/ESP8266WiFi \
         $(ESP_LIBS)/ESP8266mDNS \
         $(ESP_LIBS)/ESP8266WebServer \
         $(ESP_LIBS)/ESP8266HTTPUpdateServer \
 		$(HOME)/src/i2cdevlib/Arduino/MPU6050 \
 		$(HOME)/src/i2cdevlib/Arduino/I2Cdev \
+
 
 
 # Esp8266 Arduino git location

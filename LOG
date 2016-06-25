@@ -1,3 +1,7 @@
+Sa 25. Jun 10:19:52 CEST 2016
+Wenn das Filesystem halb voll ist, steigt die Zeit zum Logfileschreiben von 0.25 auf 1 Sekunde (und dann sogar 2s) an. File System löschen bringt
+nicht viel. Man muss neue formatieren.
+
 Sa 25. Jun 00:12:17 CEST 2016
 Für das Fileschreiben von 1024 * 3 in16 + int32 braucht der ESP ca. eine Viertelsekunde.
 Längere Zeiten sind ein Bug. Liegt es dann am vergessenen Unmount for dem OTA?
