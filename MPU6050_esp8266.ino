@@ -44,7 +44,6 @@ THE SOFTWARE.
 #define CACHE_SIZE 256*1024  // Bytes
 #define LOGDELAY 5   //ms
 #define LOOPDELAY 1000 //ms
-#define RAMLOGSIZE 1024  //512 //1024
 #define RESULTLOGSIZE 100
 #define I2CBUS 4,5       //this is nodemcu port 1,2 see: https://github.com/nodemcu/nodemcu-devkit-v1.0#pin-map
 //#define I2CBUS 12,13       //Zahnseideschachtel
@@ -64,11 +63,9 @@ THE SOFTWARE.
 #include "/home/tt/sketchbook/system.inc"
 #include "/home/tt/sketchbook/web.inc"
 
-uint16_t newlog();
 uint16_t filenamecntr;
 String glogfilename;
 String alogfilename;
-
 
 const char* myhostname = "gyro";
 
@@ -83,9 +80,8 @@ File fsUploadFile;
 
 short logstate = LOG_STOP;
 uint8_t logmode = LOG_GYRO;
+uint16_t logcntr;
 unsigned short rptr=0;
-unsigned short dptr=0;
-unsigned short dbegin=0;
 
 unsigned long lasttime=0;
 
@@ -352,6 +348,7 @@ void handleNotFound() {
 
 String metadata(){
     String m;
+    m += "# LogCounter="+String(logcntr)+"\n";
     m += "# ESPID:"+String(ESP.getChipId(),HEX)+"\n";
     m += "# MPUID:"+String(mpu.getDeviceID(),HEX)+"\n";
     m += "# Temperature="+tempstr()+"\n";
@@ -385,6 +382,11 @@ void handleLog(){
             cache.seek(0,SeekSet);
             rptr=0;
             logstate = LOG_START;
+            logcntr = EEPROM.read(2) + (EEPROM.read(3)<<8);
+            logcntr++;
+            EEPROM.write(2,logcntr&0xFF);
+            EEPROM.write(3,logcntr>>8);
+            EEPROM.commit();
             msg += "Data Logging started";
             }
         if (argname=="stop"){
@@ -396,7 +398,7 @@ void handleLog(){
             if (argval!=""){
                 logdelay = argint;
             }
-            msg += String(argint);
+            msg += String(logdelay);
         }
         if (argname=="delete_all"){
             if (rxkey==0){
@@ -428,7 +430,6 @@ void handleLog(){
         if (argname=="cache"){
             unsigned long fpos = cache.position();
             cache.seek(0,SeekSet);
-            msg = "";
             //server.send(200,"text/plain",msg);
             //String header;
             //server._prepareHeader(header, 200, "text/plain", CONTENT_LENGTH_UNKNOWN);
@@ -702,12 +703,8 @@ void setup() {
     WiFi.begin(ssid.c_str(),password.c_str());
     if (not SPIFFS.exists("/data"))
         SPIFFS.openDir("/data");
-    if (not SPIFFS.exists("/data/cache")){
-        cache = SPIFFS.open("/data/cache","w+");
-        for(int i=0;i<CACHE_SIZE;i++) cache.write(0);
-    }else{
-        cache = SPIFFS.open("/data/cache","w+");
-    }
+    cache = SPIFFS.open("/data/cache","w+");
+    for(int i=0;i<CACHE_SIZE;i++) cache.write(0);   //ist anscheinend notwendig für nachfolgende schnelle Schreibzugriffe
     cache.seek(0,SeekSet);
     
     Wire.begin(I2CBUS);

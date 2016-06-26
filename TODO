@@ -1,8 +1,5 @@
-- prüfen, ob der chachewrite auch längere Zeit stabil läuft (logdelay auf 0 setzen)
-- was machen wir am Ende des Cachefiles?
-- cache.seek(0) bei logstart
-- cache2file nach logstop
-- file lister mit file sizes und total usage erweitern
+- cache2file nach logstop ist zu langsam. Eigenen Command? Oder Pointertable?
+- file lister mit total usage erweitern
 - analyse, welche Samlingintervalle sinnvoll sind
 - analyse: Berechnung der Winkelposition aus dem Integral der Winkelgeschwindigkeit
 - logram mallocen und vor dem OTA wieder freigeben, damit mehr Samples geloggt werden können, bevor der Filesave kommt.
