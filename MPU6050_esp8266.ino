@@ -360,7 +360,7 @@ void handleLog(){
         if (argname=="start"){
             String filename;
             Serial.println("TODO: cache copy. Hier?");
-            cache.seek(0,SeekCur);
+            cache.seek(0,SeekSet);
             rptr=0;
             filenamecntr = newlog();
             glogfilename = "/data/g"+String(filenamecntr)+".txt";
