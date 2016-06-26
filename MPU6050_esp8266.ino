@@ -160,6 +160,12 @@ void toggle_LED(){
     digitalWrite(led, blinkState);
 }
 
+/* copy cache to separate file
+*/
+uint32_t cache2file(){
+    Serial.println("TODO: cache2file");
+}
+
 uint16_t cache_read_uint16(){
     uint16_t val = cache.read();
     val |= cache.read()<<8;
@@ -353,6 +359,8 @@ void handleLog(){
             rxkey = argval.toInt();
         if (argname=="start"){
             String filename;
+            Serial.println("TODO: cache copy. Hier?");
+            cache.seek(0,SeekCur);
             rptr=0;
             filenamecntr = newlog();
             glogfilename = "/data/g"+String(filenamecntr)+".txt";
@@ -473,11 +481,13 @@ void handleFile(){
         }
         if (argname=="dir"){
             Dir dir = SPIFFS.openDir(argval);
+            File f;
             String filename ;
             while(dir.next()){
                 filename = dir.fileName();
-                Serial.print(filename);
-                msg += "<a href=\""+filename+"\">"+filename+"</a>...<a href=\"file?delete="+filename+"\">delete</a></br>\n";
+                f = dir.openFile("r");
+                Serial.println(filename+String(f.size()));
+                msg += "<a href=\""+filename+"\">"+filename+"</a> "+String((f.size()+500)/1000)+"kB...<a href=\"file?delete="+filename+"\">delete</a></br>\n";
             }
         }
         if (argname=="delete"){
