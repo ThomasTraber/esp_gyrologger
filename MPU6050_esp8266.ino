@@ -42,7 +42,7 @@ THE SOFTWARE.
 
 
 #define CACHE_SIZE 256*1024  // Bytes
-#define LOGDELAY 0   //ms
+#define LOGDELAY 5   //ms
 #define LOOPDELAY 1000 //ms
 #define RAMLOGSIZE 1024  //512 //1024
 #define RESULTLOGSIZE 100
@@ -93,16 +93,6 @@ struct res{
     unsigned long time;
     uint16_t gmax;
 } results[RESULTLOGSIZE];
-
-struct dat{
-    unsigned long time;
-    int16_t gx;
-    int16_t gy;
-    int16_t gz;
-    int16_t ax;
-    int16_t ay;
-    int16_t az;
-} data[RAMLOGSIZE];
 
 
 // I2Cdev and MPU6050 must be installed as libraries, or else the .cpp/.h files
@@ -163,7 +153,24 @@ void toggle_LED(){
 /* copy cache to separate file
 */
 uint32_t cache2file(){
-    Serial.println("TODO: cache2file");
+    uint16_t fcntr;
+    uint32_t fpos;
+    fcntr = EEPROM.read(0) + (EEPROM.read(1)<<8);
+    Serial.println("Incrementing Filename Counter"+String(fcntr));
+    fcntr++;
+    Serial.println(String(fcntr));;
+    EEPROM.write(0,fcntr&0xFF);
+    EEPROM.write(1,fcntr>>8);
+    EEPROM.commit();
+    
+    fpos = cache.position();
+    File f = SPIFFS.open("/data/"+String(fcntr)+".dat","w"); 
+    cache.seek(0,SeekSet);
+    do{
+        f.write(cache.read());
+        ESP.wdtFeed();
+    }while(cache.position()<fpos);  
+    return f.position();
 }
 
 uint16_t cache_read_uint16(){
@@ -343,6 +350,21 @@ void handleNotFound() {
 	digitalWrite ( led, 0 );
 }
 
+String metadata(){
+    String m;
+    m += "# ESPID:"+String(ESP.getChipId(),HEX)+"\n";
+    m += "# MPUID:"+String(mpu.getDeviceID(),HEX)+"\n";
+    m += "# Temperature="+tempstr()+"\n";
+    m += "# LogDelay="+String(logdelay)+"\n";
+    m += "# GyroFullScale="+String(mpu_get_gyro_fs())+"\n";
+    m += "# AccFullScale="+String(mpu_get_acc_fs())+"\n";
+    m += "# LowPassFilter="+String(mpu_get_lpf())+"\n";
+    m += "# HighPassFilter="+String(mpu_get_hpf())+"\n";
+    m += "# Time/100us\t";
+    m += "\n";
+    return m;
+}
+
 void handleLog(){
     String argname, argval;
     int argint;
@@ -362,28 +384,12 @@ void handleLog(){
             Serial.println("TODO: cache copy. Hier?");
             cache.seek(0,SeekSet);
             rptr=0;
-            filenamecntr = newlog();
-            glogfilename = "/data/g"+String(filenamecntr)+".txt";
-            alogfilename = "/data/a"+String(filenamecntr)+".txt";
-            for(filename=glogfilename;filename!=alogfilename;filename=alogfilename){
-                logfile=SPIFFS.open(filename,"a");
-                logfile.println("# ESPID:"+String(ESP.getChipId(),HEX));
-                logfile.println("# MPUID:"+String(mpu.getDeviceID(),HEX));
-                logfile.println("# Temperature="+tempstr());
-                logfile.println("# LogDelay="+String(logdelay));
-                logfile.println("# GyroFullScale="+String(mpu_get_gyro_fs()));
-                logfile.println("# AccFullScale="+String(mpu_get_acc_fs()));
-                logfile.println("# LowPassFilter="+String(mpu_get_lpf()));
-                logfile.println("# HighPassFilter="+String(mpu_get_hpf()));
-                logfile.println("# Time/100us\t");
-                Serial.println("temp:"+tempstr());
-                logfile.close();
-            }
             logstate = LOG_START;
             msg += "Data Logging started";
             }
         if (argname=="stop"){
             logstate = LOG_STOP;
+            //cache2file();             //zu langsam. Muss man anders machen. Cachefile vergrößern und Pointers speichern?
             msg += "Data Logging stopped";
         }
         if (argname=="delay"){
@@ -427,9 +433,12 @@ void handleLog(){
             //String header;
             //server._prepareHeader(header, 200, "text/plain", CONTENT_LENGTH_UNKNOWN);
             //server.sendContent(header);
-
+            server.sendContent(metadata());
             do{
-                msg = String(cache_read_uint32())+"\t"+String(cache_read_int16())+"\t"+String(cache_read_int16())+"\t"+String(cache_read_int16())+"\n";
+                msg = String(cache_read_uint32())+"\t"+String(cache_read_int16())+"\t"+String(cache_read_int16())+"\t"+String(cache_read_int16());
+                if (logmode==(LOG_GYRO|LOG_ACC))
+                    msg += "\t"+String(cache_read_int16())+"\t"+String(cache_read_int16())+"\t"+String(cache_read_int16());
+                msg += "\n";
                 server.sendContent(msg);
                 ESP.wdtFeed();
             }while(cache.position()<fpos);
@@ -670,18 +679,6 @@ void filedelete(){
                 server.send(200,"text/html",msg);
 }
             
-uint16_t newlog(){
-    uint16_t fcntr;
-    fcntr = EEPROM.read(0) + (EEPROM.read(1)<<8);
-    Serial.println("Incrementing Filename Counter"+String(fcntr));
-    fcntr++;
-    Serial.println(String(fcntr));;
-    EEPROM.write(0,fcntr&0xFF);
-    EEPROM.write(1,fcntr>>8);
-    EEPROM.commit();
-    return fcntr;                   
-}
-
 void setup() {
     int timeoutcntr;
     EEPROM.begin(4);
@@ -705,8 +702,12 @@ void setup() {
     WiFi.begin(ssid.c_str(),password.c_str());
     if (not SPIFFS.exists("/data"))
         SPIFFS.openDir("/data");
-    cache = SPIFFS.open("/data/cache","w+");
-    for(int i=0;i<CACHE_SIZE;i++) cache.write(0);
+    if (not SPIFFS.exists("/data/cache")){
+        cache = SPIFFS.open("/data/cache","w+");
+        for(int i=0;i<CACHE_SIZE;i++) cache.write(0);
+    }else{
+        cache = SPIFFS.open("/data/cache","w+");
+    }
     cache.seek(0,SeekSet);
     
     Wire.begin(I2CBUS);
@@ -810,55 +811,19 @@ void loop() {
     gylast=gy;
     gzlast=gz;
 
-    data[dptr].time = time;
-    data[dptr].gx = gx;
-    data[dptr].gy = gy;
-    data[dptr].gz = gz;
-    data[dptr].ax = ax;
-    data[dptr].ay = ay;
-    data[dptr].az = az;
     if (logstate == LOG_START){
         cache_write_uint32(time);
-        cache_write_int16(gx);
-        cache_write_int16(gy);
-        cache_write_int16(gz);
-    }
-    dptr++;
-
-    if (dbegin!=0){
-        dbegin++;
-        if (dbegin>=RAMLOGSIZE)
-        {
-            dbegin = 0;
+        if (logmode&LOG_GYRO){
+            cache_write_int16(gx);
+            cache_write_int16(gy);
+            cache_write_int16(gz);
         }
-    }
-    if (dptr>=RAMLOGSIZE){
-        //RAM filled
-        /*
-        if (logstate == LOG_START){
-            unsigned long starttime=millis();
-            Serial.println(String(starttime)+" writing ramlog");
-            if ( logmode & LOG_GYRO ){
-                logfile=SPIFFS.open(glogfilename,"a");
-                for (int i=0;i<RAMLOGSIZE;i++){
-                    logfile.printf("%lu\t%i\t%i\t%i\n",data[i].time,data[i].gx,data[i].gy,data[i].gz);
-                    }
-                logfile.close();
-            }
-            if ( logmode & LOG_ACC ){
-                logfile=SPIFFS.open(alogfilename,"a");
-                for (int i=0;i<RAMLOGSIZE;i++){
-                    logfile.printf("%lu\t%i\t%i\t%i\n",data[i].time,data[i].ax,data[i].ay,data[i].az);
-                    }
-                logfile.close();
-            }
-            Serial.println(String(millis()-starttime)+" writing finished");
+        if (logmode&LOG_ACC){
+            cache_write_int16(ax);
+            cache_write_int16(ay);
+            cache_write_int16(az);
         }
-        */
-        dptr = 0;
-        dbegin= 1;
     } 
-
     delay(logdelay);
 
     if (millis()<lasttime+loopdelay){
