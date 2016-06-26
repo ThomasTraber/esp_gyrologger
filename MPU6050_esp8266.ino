@@ -42,7 +42,7 @@ THE SOFTWARE.
 
 
 #define CACHE_SIZE 256*1024  // Bytes
-#define LOGDELAY 5   //ms
+#define LOGDELAY 0   //ms
 #define LOOPDELAY 1000 //ms
 #define RAMLOGSIZE 1024  //512 //1024
 #define RESULTLOGSIZE 100
@@ -431,6 +431,7 @@ void handleLog(){
             do{
                 msg = String(cache_read_uint32())+"\t"+String(cache_read_int16())+"\t"+String(cache_read_int16())+"\t"+String(cache_read_int16())+"\n";
                 server.sendContent(msg);
+                ESP.wdtFeed();
             }while(cache.position()<fpos);
             cache.seek(fpos,SeekSet);
             //server.send(200,"text/plain",msg);
@@ -833,6 +834,7 @@ void loop() {
     }
     if (dptr>=RAMLOGSIZE){
         //RAM filled
+        /*
         if (logstate == LOG_START){
             unsigned long starttime=millis();
             Serial.println(String(starttime)+" writing ramlog");
@@ -852,6 +854,7 @@ void loop() {
             }
             Serial.println(String(millis()-starttime)+" writing finished");
         }
+        */
         dptr = 0;
         dbegin= 1;
     } 
