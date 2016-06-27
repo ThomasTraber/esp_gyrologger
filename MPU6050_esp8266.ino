@@ -480,6 +480,7 @@ void handleFile(){
         }
         if (argname=="dir"){
             Dir dir = SPIFFS.openDir(argval);
+            FSInfo fsinfo;
             File f;
             String filename ;
             while(dir.next()){
@@ -488,6 +489,9 @@ void handleFile(){
                 Serial.println(filename+String(f.size()));
                 msg += "<a href=\""+filename+"\">"+filename+"</a> "+String((f.size()+500)/1000)+"kB...<a href=\"file?delete="+filename+"\">delete</a></br>\n";
             }
+            SPIFFS.info(fsinfo);
+            msg += String((fsinfo.totalBytes-fsinfo.usedBytes)/1000)+" KB free<br/>";
+            msg += String(fsinfo.usedBytes/1000)+" KB used<br/>";
         }
         if (argname=="delete"){
             if (rxkey==0){
@@ -608,7 +612,6 @@ void handleMpu(){
                 }
             else if(argname=="lpf"){
                 if (argval!="")
-                    //mpu.setDLPFMode(argint);
                     mpu_set_lpf(argint);
                 msg = String(mpu_get_lpf());
             }
@@ -702,7 +705,7 @@ void setup() {
     mpu.setRate(10);
     mpu.setFullScaleGyroRange(MPU6050_GYRO_FS_2000);
     mpu_set_lpf(50);
-    mpu.setFullScaleAccelRange(MPU6050_ACCEL_FS_8);
+    mpu.setFullScaleAccelRange(MPU6050_ACCEL_FS_2);
     mpu.setTempSensorEnabled(1);
 
     for (timeoutcntr=0; (WiFi.status() != WL_CONNECTED) and (timeoutcntr<10); timeoutcntr++) {

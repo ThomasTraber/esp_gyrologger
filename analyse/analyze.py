@@ -4,9 +4,14 @@
 Analyze Gyrologger data
 """
 
+global interactive
 from pylab import *
 import sys
 import os.path
+#from IPython.Shell import IPShellEmbed
+#ipshell= IPShellEmbed() 
+from IPython import embed as ipshell
+import scipy.signal as ss
 
 basename = ""
 
@@ -48,6 +53,7 @@ def plot_samplinginterval_hgram(data):
     print "Max. Samplingtime",dtimes.max()
     print "Median Samplingtime",median(dtimes)
     print "Average Samplintime",average(dtimes)
+    figure("sampling hist")
     title(basename)
     hist(dtimes,4,alpha=0.3,log=True)
     grid(1)
@@ -58,6 +64,7 @@ def plot_samplinginterval_hgram(data):
     ylim(1,len(dtimes))
     savefig("%s_hist.png"%basename)
 
+    figure("sampling intervals")
     clf()
     title(basename)
     grid(1)
@@ -68,13 +75,13 @@ def plot_samplinginterval_hgram(data):
 
 def plot_data(data):
     times,gx,gy,gz,ax,ay,az,basename = data
+    figure("data")
     clf()
     grid(1)
     title(basename)
-
-    plot(times,gx,".",label="gx")
-    plot(times,gy,".",label="gy")
-    plot(times,gz,".",label="gz")
+    plot(times,gx,label="gx")
+    plot(times,gy,label="gy")
+    plot(times,gz,label="gz")
     legend(loc=2)
     xlabel("Time / s")
     ylabel("Angular Speed")
@@ -86,15 +93,81 @@ def plot_data(data):
         legend(loc=1)
         ylabel("Acceleration")
     savefig("%s_time.png"%basename)
-    
+
+    figure("sum")
+    clf()
+    title("Rotation Angle from Gyrosum and Total Acceleration")
+    grid(1)
+    asum = sqrt(ax*ax+ay*ay+az*az)
+    dtimes = gradient(times)
+    gxpos = cumsum(gx*dtimes)
+    gypos = cumsum(gy*dtimes)
+    gzpos = cumsum(gz*dtimes)
+
+    axpos = arctan2(ay,az)*180.0/pi
+    aypos = arctan2(ax,az)*180.0/pi
+    azpos = arctan2(ax,ay)*180.0/pi
+
+    plot(times,gxpos,"b",label="gxpos")
+    plot(times,gypos,"g",label="gypos")
+    plot(times,gzpos,"r",label="gzpos")
+
+    plot(times,axpos,"b",ls=":",label="axpos")
+    plot(times,aypos,"g",ls=":",label="aypos")
+    plot(times,azpos,"r",ls=":",label="azpos")
+
+    legend(loc=2)
+    ylabel("GyroSum")
+    xlabel("Time / s")
+    twinx()
+    plot(times,asum,label="asum")
+    legend(loc=1)
+    ylabel("AccVectorLen")
+    savefig("%s_sumcalc.png"%basename)
+
+    figure("sumdetrended")
+    clf()
+    title("Rotation Angle from Detrended Gyrosum and Total Acceleration")
+    grid(1)
+    axpos,aypos = ss.detrend(-aypos),ss.detrend(axpos)
+    azpos = ss.detrend(azpos)
+    gxpos = ss.detrend(gxpos)
+    gypos = ss.detrend(gypos)
+    gzpos = ss.detrend(gzpos)
+    plot(times,gxpos,"b",label="gxpos")
+    plot(times,gypos,"g",label="gypos")
+    plot(times,gzpos,"r",label="gzpos")
+
+    plot(times,axpos,"b",ls=":",label="axpos")
+    plot(times,aypos,"g",ls=":",label="aypos")
+    plot(times,azpos,"r",ls=":",label="azpos")
+    legend(loc=2)
+    ylabel("Rotation Angle / deg")
+    xlabel("Time / s")
+    twinx()
+    plot(times,asum,"k",alpha=0.5,label="asum")
+    legend(loc=1)
+    ylabel("Total Acceleration / g")
+    savefig("%s_sumdetrended.png"%basename)
 
 def analyze(filename):
     data = load(filename)
     plot_samplinginterval_hgram(data)
     plot_data(data)
+    if interactive:
+        print "starting ipshell"
+        ipshell()
 
+interactive = False
 
 if __name__=="__main__":
     import sys
-    analyze(sys.argv[1])
+    for arg in sys.argv[1:]:
+        print arg
+        if arg == "-i":
+            print "interactive"
+            interactive=True
+            ion()
+            break;
+    analyze(sys.argv[-1])
 
