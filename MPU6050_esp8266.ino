@@ -36,12 +36,10 @@ THE SOFTWARE.
 - File deleter (free file space checken (limit?) und ev. älteste Files löschen)
 - MPU data display
 - MPU Configurator
-- Network Configuration via Webinterface
-- Progmem warning bearbeiten
 */
 
 
-#define CACHE_SIZE 256*1024  // Bytes
+#define CACHE_SIZE 256*1024  // Bytes  // mehr als 256K macht die Kiste anscheinend langsam
 #define LOGDELAY 5   //ms
 #define LOOPDELAY 1000 //ms
 #define RESULTLOGSIZE 100
@@ -79,7 +77,7 @@ ESP8266HTTPUpdateServer httpUpdater;
 File fsUploadFile;
 
 short logstate = LOG_STOP;
-uint8_t logmode = LOG_GYRO;
+uint8_t logmode = LOG_GYRO|LOG_ACC;
 uint16_t logcntr;
 unsigned short rptr=0;
 
@@ -91,21 +89,11 @@ struct res{
 } results[RESULTLOGSIZE];
 
 
-// I2Cdev and MPU6050 must be installed as libraries, or else the .cpp/.h files
-// for both classes must be in the include path of your project
 #include "I2Cdev.h"
 #include "MPU6050.h"
-
-// Arduino Wire library is required if I2Cdev I2CDEV_ARDUINO_WIRE implementation
-// is used in I2Cdev.h
 #include "Wire.h"
 
-// class default I2C address is 0x68
-// specific I2C addresses may be passed as a parameter here
-// AD0 low = 0x68 (default for InvenSense evaluation board)
-// AD0 high = 0x69
 MPU6050 mpu;
-//MPU6050 mpu(0x69); // <-- use for AD0 high
 
 int16_t gx, gy, gz;
 int16_t gxlast=0;
