@@ -150,6 +150,9 @@ def plot_data(data):
     ylabel("Total Acceleration / g")
     savefig("%s_sumdetrended.png"%basename)
 
+    figure("Schwingungsdauer")
+    #tiefpunkte = where(
+
 def analyze(filename):
     data = load(filename)
     plot_samplinginterval_hgram(data)

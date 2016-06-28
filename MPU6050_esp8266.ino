@@ -743,81 +743,80 @@ void loop() {
 	ESP.wdtDisable();
 	server.handleClient();
 
-    // read raw accel/gyro measurements from device
-    switch(logmode){
-        case LOG_GYRO | LOG_ACC:
-            mpu.getMotion6(&ax, &ay, &az, &gx, &gy, &gz);break;
-        case LOG_GYRO:
-            mpu.getRotation(&gx, &gy, &gz);break;
-        case LOG_ACC:
-            mpu.getAcceleration(&ax, &ay, &az);break;
-        default:
-            Serial.println("illegal logmode");
-        }
-    time = micros()/100;
-    //Serial.printf("%lu,%d,%d,%d\r",micros(),ax,ay,az);
-
-    gxmax=imax(gxmax,abs(gx));
-    gymax=imax(gymax,abs(gy));
-    gzmax=imax(gzmax,abs(gz));
-    gxsum+=gx;
-    gysum+=gy;
-    gzsum+=gz;
-
-    if (
-        ((abs(gx)>gyrosquelch)
-        or (abs(gy)>gyrosquelch)
-        or (abs(gz)>gyrosquelch))
-    and 
-        ( ((rptr>0) and (time!=results[rptr-1].time)) or (rptr==0))
-    and (
-        ((-sign(gxlast)==sign(gx)) 
-        and (abs(gxsum)>abs(gysum))
-        and (abs(gxsum)>abs(gzsum))
-        )
-      or ((-sign(gylast)==sign(gy)) 
-        and (abs(gysum)>abs(gzsum))
-        and (abs(gysum)>abs(gxsum))
-        )
-      or ((-sign(gzlast)==sign(gz)) 
-        and (abs(gzsum)>abs(gysum))
-        and (abs(gzsum)>abs(gxsum))
-            )
-          )
-        ){
-            Serial.println(String(time)+" "+String(gx)+" "+String(gy)+"	"+String(gz)+" "+String(gxlast)+" "+String(gylast)+" "+String(gzlast) + " " +String(gxsum)+" "+String(gysum)+" "+String(gzsum));
-            // Wechsel der Schwinungsrichtung erkannt
-            if (rptr<RESULTLOGSIZE){
-                results[rptr].gmax=(mpu_get_gyro_fs()*1000*sqrt(gxmax*gxmax+gymax*gymax+gzmax*gzmax))/0x8000;
-                results[rptr].time=time;
-                rptr++;
-                }
-            gxmax=gymax=gzmax=0;
-            gxsum=gysum=gzsum=0;
-    }
-    gxlast=gx;
-    gylast=gy;
-    gzlast=gz;
-
     if (logstate == LOG_START){
-        cache_write_uint32(time);
-        if (logmode&LOG_GYRO){
-            cache_write_int16(gx);
-            cache_write_int16(gy);
-            cache_write_int16(gz);
-        }
-        if (logmode&LOG_ACC){
-            cache_write_int16(ax);
-            cache_write_int16(ay);
-            cache_write_int16(az);
-        }
-    } 
-    delay(logdelay);
+      do{
+        time = micros()/100;
+        // read raw accel/gyro measurements from device
+        switch(logmode){
+            case LOG_GYRO | LOG_ACC:
+                mpu.getMotion6(&ax, &ay, &az, &gx, &gy, &gz);break;
+            case LOG_GYRO:
+                mpu.getRotation(&gx, &gy, &gz);break;
+            case LOG_ACC:
+                mpu.getAcceleration(&ax, &ay, &az);break;
+            default:
+                Serial.println("illegal logmode");
+            }
+        //Serial.printf("%lu,%d,%d,%d\r",micros(),ax,ay,az);
 
-    if (millis()<lasttime+loopdelay){
-        lasttime=millis();
-	    ESP.wdtDisable();
-	    server.handleClient();
+        gxmax=imax(gxmax,abs(gx));
+        gymax=imax(gymax,abs(gy));
+        gzmax=imax(gzmax,abs(gz));
+        gxsum+=gx;
+        gysum+=gy;
+        gzsum+=gz;
+
+        if (
+            ((abs(gx)>gyrosquelch)
+            or (abs(gy)>gyrosquelch)
+            or (abs(gz)>gyrosquelch))
+        and 
+            ( ((rptr>0) and (time!=results[rptr-1].time)) or (rptr==0))
+        and (
+            ((-sign(gxlast)==sign(gx)) 
+            and (abs(gxsum)>abs(gysum))
+            and (abs(gxsum)>abs(gzsum))
+            )
+          or ((-sign(gylast)==sign(gy)) 
+            and (abs(gysum)>abs(gzsum))
+            and (abs(gysum)>abs(gxsum))
+            )
+          or ((-sign(gzlast)==sign(gz)) 
+            and (abs(gzsum)>abs(gysum))
+            and (abs(gzsum)>abs(gxsum))
+                )
+              )
+            ){
+                Serial.println(String(time)+" "+String(gx)+" "+String(gy)+"	"+String(gz)+" "+String(gxlast)+" "+String(gylast)+" "+String(gzlast) + " " +String(gxsum)+" "+String(gysum)+" "+String(gzsum));
+                // Wechsel der Schwinungsrichtung erkannt
+                if (rptr<RESULTLOGSIZE){
+                    results[rptr].gmax=(mpu_get_gyro_fs()*1000*sqrt(gxmax*gxmax+gymax*gymax+gzmax*gzmax))/0x8000;
+                    results[rptr].time=time;
+                    rptr++;
+                    }
+                gxmax=gymax=gzmax=0;
+                gxsum=gysum=gzsum=0;
+        }
+        gxlast=gx;
+        gylast=gy;
+        gzlast=gz;
+
+            cache_write_uint32(time);
+            if (logmode&LOG_GYRO){
+                cache_write_int16(gx);
+                cache_write_int16(gy);
+                cache_write_int16(gz);
+            }
+            if (logmode&LOG_ACC){
+                cache_write_int16(ax);
+                cache_write_int16(ay);
+                cache_write_int16(az);
+            }
+        while(micros()/100<time+logdelay*10){
+        ;
+        }
+    }while(millis()<lasttime+loopdelay);
     }
+    lasttime=millis();
 }
 
