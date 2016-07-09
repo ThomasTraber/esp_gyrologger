@@ -12,6 +12,8 @@ import os.path
 #ipshell= IPShellEmbed() 
 from IPython import embed as ipshell
 import scipy.signal as ss
+import harminv
+import scipy.interpolate as si
 
 basename = ""
 
@@ -151,12 +153,90 @@ def plot_data(data):
     savefig("%s_sumdetrended.png"%basename)
 
     figure("Schwingungsdauer")
+    xwechsel = diff(sign(gxpos))
+    ywechsel = diff(sign(gypos))
+    zwechsel = diff(sign(gzpos))
+    plot(times[1:],xwechsel)
+    plot(times[1:],ywechsel)
+    plot(times[1:],zwechsel)
+    savefig("%s_wechsel.png"%basename);
+    #TODO: time in periods rein und nicth die inidzes
+    xperiods = where(abs(xwechsel)>0.5)[0]
+    yperiods = where(abs(ywechsel)>0.5)[0]
+    zperiods = where(abs(zwechsel)>0.5)[0]
+    #for trip in zip(xperiods,yperiods,zperiods):
+    #    print trip
+    
     #tiefpunkte = where(
+
+def plot_harminv(data,fmax=5,calclen=4700,calcstep=None):
+    colors="bgrcmyk"
+    if calcstep==None:
+        calcstep=calclen/10
+    times,gx,gy,gz,ax,ay,az,basename = data
+    dt = min(diff(times))
+    print "harminv: dt=",dt
+    itimes = arange(times[0],times[-1],dt)
+    figure("data")
+    clf()
+    grid(1)
+    title(basename)
+    for j,(name,d) in enumerate(zip(("gx","gy","gz","ax","ay","az"),(gx,gy,gz,ax,ay,az))):
+        di = si.griddata(times,d,itimes)
+        pk = max(abs(di))
+        id = harminv.invert(di,fmin=0.1,fmax=fmax,dt=dt)
+        c=colors[j]
+        for i,inv in enumerate(id):
+            f = inv["frequency"]
+            amp = inv["amplitude"]
+            s = amp/pk*250
+            q = inv["Q"]
+            scatter(abs(f),q,s=s,c=c,alpha=0.4)
+    ylim(-110,700)
+    xlim(0,fmax)
+    savefig("%s_harminv.png"%basename)
+
+    figure("hv_f_vs_t")
+    clf()
+    grid(1)
+    title(basename)
+    figure("hv_q_vs_t")
+    clf()
+    grid(1)
+    title(basename)
+    for j,(name,d) in enumerate(zip(("gx","gy","gz","ax","ay","az"),(gx,gy,gz,ax,ay,az))):
+        dg = si.griddata(times,d,itimes)
+        for start in range(0,len(itimes)-calclen,calcstep):
+            print start,
+            di = dg[start:start+calclen]
+            pk = max(abs(di))
+            id = harminv.invert(di,fmin=0.1,fmax=fmax,dt=dt)
+            c=colors[j]
+            xlabel="Time /s"
+            for i,inv in enumerate(id):
+                f = inv["frequency"]
+                amp = inv["amplitude"]
+                s = amp/pk*250
+                q = inv["Q"]
+                figure("hv_f_vs_t")
+                scatter(itimes[start],abs(f),c=c,alpha=0.4)
+                figure("hv_q_vs_t")
+                scatter(itimes[start],q,c=c,alpha=0.4)
+
+    figure("hv_f_vs_t")
+    ylim(0,fmax)
+    savefig("%s_harminvseries_f.png"%basename)
+    figure("hv_q_vs_t")
+    ylim(0,1000)
+    xlim(itimes[0],itimes[-calclen])
+    savefig("%s_harminvseries_q.png"%basename)
+
 
 def analyze(filename):
     data = load(filename)
     plot_samplinginterval_hgram(data)
     plot_data(data)
+    plot_harminv(data)
     if interactive:
         print "starting ipshell"
         ipshell()
